@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.7"; // kept in step with manifest.json
+  const VERSION = "0.8.8"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -310,7 +310,7 @@
 
     async _clear() {
       const t = this._target();
-      const what = t && t.kind === "master" ? "Stop Home Assistant driving the master thermostat?" : "Remove this room's schedule? It will simply follow the master.";
+      const what = t && t.kind === "master" ? "Remove the heating schedule? The thermostat will be left at its current setting." : "Remove this room's schedule? It will simply follow the master.";
       if (!window.confirm(what)) return;
       await this._callService("clear_schedule", {}, "Schedule removed");
       this._saved = this._draft = normalize({}, t.kind);
@@ -541,7 +541,7 @@
             ${t.kind === "master" ? "" : `<span><i class="sw follow"></i>heating schedule + offset</span>`}
             <span><i class="sw fixed"></i>temperature</span>
             <span><i class="sw off"></i>off (frost protection)</span>
-            <a href="#" data-action="clear" class="clear">${t.kind === "master" ? "Remove schedule (back to the thermostat's own)" : "Remove room schedule"}</a>
+            <a href="#" data-action="clear" class="clear">${t.kind === "master" ? "Remove schedule" : "Remove room schedule"}</a>
           </div>`;
       }
 
