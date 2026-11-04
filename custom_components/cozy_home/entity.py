@@ -14,10 +14,17 @@ from .migration import shared_area
 
 
 class CozyHomeEntity(Entity):
-    """Entity attached to the hub (master) device."""
+    """Entity attached to the hub (master) device.
+
+    Cozy Home's entities are hidden by default: the sidebar page and the
+    cards are the UI, and hidden entities stay out of auto-generated
+    dashboards (the Overview's "Favourites" row in particular). They still
+    work in automations and can be unhidden per entity.
+    """
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _attr_entity_registry_visible_default = False
 
     def __init__(self, controller: HeatingController, entry: ConfigEntry) -> None:
         self._controller = controller

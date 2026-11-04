@@ -162,6 +162,7 @@ class HeatingController:
         self.enabled = bool(entry.options.get(CONF_ENABLED, True))
         self.resync_minutes = int(entry.options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES))
         self.master_active_block: tuple[str, Block] | None = None
+        self.entities_hidden_once = False  # one-time hide of pre-0.8.1 entities done
         self._last_resync: datetime | None = None
         self._ready = False  # no pushes until Home Assistant has fully started
 
@@ -179,6 +180,7 @@ class HeatingController:
     async def async_setup(self) -> None:
         """Load stored settings and start watching entities and the clock."""
         stored = await self._store.async_load() or {}
+        self.entities_hidden_once = bool(stored.get("entities_hidden"))
         migrate_enabled = "enabled" in stored
         if migrate_enabled and CONF_ENABLED not in self.entry.options:
             # Pre-0.3 installs kept the global switch here; it is an entry
@@ -289,6 +291,7 @@ class HeatingController:
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
+            "entities_hidden": self.entities_hidden_once,
             "master_schedule": self.master_schedule,
             "rooms": {
                 room.subentry_id: {
@@ -303,6 +306,12 @@ class HeatingController:
                 for room in self.rooms.values()
             },
         }
+
+    @callback
+    def async_mark_entities_hidden(self) -> None:
+        """Remember that existing entities were hidden once (not re-done later)."""
+        self.entities_hidden_once = True
+        self._mark_dirty()
 
     @callback
     def _mark_dirty(self) -> None:

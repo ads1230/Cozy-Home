@@ -102,6 +102,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> 
     if stale := ent_reg.async_get_entity_id(Platform.SWITCH, DOMAIN, f"{entry.entry_id}_enabled"):
         ent_reg.async_remove(stale)
 
+    # Entities are hidden by default from 0.8.1 (the sidebar page is the UI).
+    # Hide the ones an older version created, once; a later unhide by the
+    # user is respected.
+    if not controller.entities_hidden_once:
+        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            if reg_entry.hidden_by is None:
+                ent_reg.async_update_entity(
+                    reg_entry.entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
+                )
+        controller.async_mark_entities_hidden()
+
     # The hub device: rooms hang off it via ``via_device``.
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,

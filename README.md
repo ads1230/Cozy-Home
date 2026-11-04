@@ -62,6 +62,11 @@ Each room becomes a device with its own controls:
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
 | `sensor.<hub>_schedule` | What the heating schedule is doing, e.g. "Fixed 20° until 22:00"; attribute `schedule` holds the whole week |
 
+All of these are **hidden by default** — the Cozy Home page and the cards are the UI, and
+hidden entities stay out of Home Assistant's auto-generated dashboards (the Overview's
+*Favourites* row otherwise fills up with them). They still work in automations and on the
+device page, and any of them can be unhidden in its settings if you want it on a dashboard.
+
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
 entities are the source of truth and they survive restarts. The cut-off, off action, frost
 temperature and master-off setting live together in the room device's *Configuration* section.

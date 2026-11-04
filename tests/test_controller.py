@@ -1053,3 +1053,38 @@ async def test_new_room_device_is_suggested_into_its_area(
     await setup_integration(hass, entry)
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "study_sub")})
     assert device is not None and device.area_id == study.id
+
+
+async def test_entities_hidden_by_default_and_existing_ones_hidden_once(
+    hass: HomeAssistant, config_entry: MockConfigEntry, climate_calls
+) -> None:
+    """Cozy Home entities stay off auto-generated dashboards; a user unhide sticks."""
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    ent_reg = er.async_get(hass)
+    # An entity created by an older version, visible
+    ent_reg.async_get_or_create(
+        "number",
+        DOMAIN,
+        "bedroom_sub_offset",
+        config_entry=config_entry,
+        suggested_object_id="bedroom_offset",
+    )
+    assert ent_reg.async_get("number.bedroom_offset").hidden_by is None
+    await setup_integration(hass, config_entry)
+
+    # New and old entities alike are hidden, but still have states
+    for entity_id in (
+        "number.bedroom_offset",
+        "switch.bedroom_follow_master",
+        "sensor.bedroom_target_temperature",
+        "sensor.heating_schedule",
+    ):
+        assert ent_reg.async_get(entity_id).hidden_by == er.RegistryEntryHider.INTEGRATION
+        assert hass.states.get(entity_id) is not None
+
+    # The user unhides one; a reload doesn't hide it again
+    ent_reg.async_update_entity("number.bedroom_offset", hidden_by=None)
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert ent_reg.async_get("number.bedroom_offset").hidden_by is None
