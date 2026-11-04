@@ -30,12 +30,12 @@ Then **Settings → Devices & services → Add integration → Cozy Home**.
 
 1. **Choose the master thermostat** — the `climate.*` entity that calls for heat (e.g. your
    Hive thermostat).
-2. On the integration's page, click **Add room** for each room:
-   * **Room name** — e.g. *Bedroom*
-   * **Room thermostat** — the room's `climate.*` entity (TRV)
-   * **Offset** — degrees added to the master's target (`-2` with a master of 20° → 18°)
-   * **Turn off below** — if the room's computed target would be lower than this, the room
-     thermostat is switched **off** instead (default 10°)
+2. **Tick the rooms.** The next step lists every other thermostat Home Assistant already knows
+   about (TRVs, smart radiator valves…), all pre-ticked — untick anything that isn't a room
+   radiator and set a default offset / cut-off for the lot. Each one becomes a room named after
+   its **area** (or its own name with words like "TRV"/"thermostat" stripped).
+3. Add thermostats later with **Add rooms** on the integration page (same multi-select, only
+   the ones that aren't rooms yet), and rename or re-point a room via its ⋮ → *Reconfigure*.
 
 Each room becomes a device with its own controls:
 
@@ -49,6 +49,7 @@ Each room becomes a device with its own controls:
 | `select.<room>_when_master_is_off` | **Turn off** the room too (default), or **Hold last target** — leave the TRV as it is until the master comes back |
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
+| `sensor.<room>_schedule` | The block in effect now; attribute `schedule` holds the whole week (read by the card) |
 | `switch.<hub>_enabled` | Global on/off (e.g. for summer) |
 
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
@@ -94,14 +95,37 @@ A schedule is a list of **blocks per day**, exactly like the Hive app: each bloc
 time and lasts until the next block starts — rolling over midnight and across the week. If
 Monday has no block at 00:00, Sunday's last block is still in force.
 
-Set one with the `cozy_home.set_schedule` action (Developer tools → Actions), picking the
-**room device**. Days are `mon` … `sun`; `weekdays`, `weekend` and `all` are shortcuts (an
-explicit day overrides a shortcut).
+### The schedule card
+
+The integration bundles a dashboard card and registers it itself (no *Resources* step).
+Edit a dashboard → **Add card** → search *Cozy Home Schedule*, or in YAML:
+
+```yaml
+type: custom:cozy-home-schedule-card
+# optional:
+# title: Heating schedule
+# entity: sensor.bedroom_schedule   # start on this room instead of the first
+```
+
+Pick a room (or the master) in the dropdown. Tap a block to edit it — start time, mode
+(*Master* / *Fixed* / *Off*), temperature or offset — or **drag its left edge** to move the
+start time (15-minute steps). ＋ adds a block after the selected one, － removes it, ⧉ copies
+the day to other days, then **Save** (or **Undo All**). The current time is marked, and the
+status line shows what the room is doing right now.
+
+If the card doesn't show up right after installing, reload the browser page once — the
+frontend only picks up new scripts on load.
+
+### From an automation or Developer tools
+
+Set one with the `cozy_home.set_schedule` action, targeting either the room **device** or its
+`sensor.<room>_schedule` **entity**. Days are `mon` … `sun`; `weekdays`, `weekend` and `all`
+are shortcuts (an explicit day overrides a shortcut).
 
 ```yaml
 action: cozy_home.set_schedule
 data:
-  device_id: 0123456789abcdef              # the room's device
+  entity_id: sensor.bedroom_schedule
   schedule:
     weekdays:
       - { time: "06:30", mode: follow }               # master + room offset
@@ -123,7 +147,8 @@ Block modes:
 | `off` | — | thermostat off |
 
 `cozy_home.get_schedule` returns the schedule and the block currently in effect;
-`cozy_home.clear_schedule` removes it.
+`cozy_home.clear_schedule` removes it. The `sensor.<room>_schedule` entity always carries the
+current schedule in its `schedule` attribute (that's what the card reads).
 
 ### Scheduling the master itself
 
@@ -137,10 +162,10 @@ schedule if you go this route, otherwise the two will take turns.
 
 | Action | Fields | |
 |---|---|---|
-| `cozy_home.set_schedule` | `device_id`, `schedule` | Replace a room's (or the master's) schedule |
-| `cozy_home.get_schedule` | `device_id` | Returns `schedule` and `active` block |
-| `cozy_home.clear_schedule` | `device_id` | Remove the schedule |
-| `cozy_home.sync` | `device_id` (optional) | Recompute and push now, even if unchanged |
+| `cozy_home.set_schedule` | `device_id` or `entity_id`, `schedule` | Replace a room's (or the master's) schedule |
+| `cozy_home.get_schedule` | `device_id` or `entity_id` | Returns `schedule` and `active` block |
+| `cozy_home.clear_schedule` | `device_id` or `entity_id` | Remove the schedule |
+| `cozy_home.sync` | `device_id` / `entity_id` (optional) | Recompute and push now, even if unchanged |
 
 ## Notes
 
@@ -153,11 +178,20 @@ schedule if you go this route, otherwise the two will take turns.
 
 ## Logo
 
-The `brand/` folder has the mark and wordmark as SVG plus the PNGs Home Assistant's
-[brands repository](https://github.com/home-assistant/brands) expects (`icon.png`,
-`icon@2x.png`, `logo.png`, `logo@2x.png`, and `dark_` variants). Home Assistant only shows
-brand images that are in that repository, so to get the logo onto the integrations page open
-a pull request there adding the four main files under `custom_integrations/cozy_home/`.
+**Why the integrations page shows a placeholder:** Home Assistant never reads brand images from
+an integration's own folder — it fetches them from
+[brands.home-assistant.io](https://brands.home-assistant.io), which is populated only from the
+[home-assistant/brands](https://github.com/home-assistant/brands) repository. So the logo
+appears in HA only once it has been merged there. To do that:
+
+1. Fork `home-assistant/brands`.
+2. Add a folder `custom_integrations/cozy_home/` containing the four files from `brand/`:
+   `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png` (they already match the size rules:
+   256²/512² icons, 128/256-px-high logos, PNG, transparent, trimmed).
+3. Open a pull request. Once it's merged, HA picks the images up without any change here
+   (clear the browser cache if it still shows the placeholder).
+
+`brand/` also has the SVG sources and `dark_` variants for dark backgrounds.
 
 ## Development
 

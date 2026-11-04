@@ -20,6 +20,7 @@ CONF_MASTER_OFF: Final = "master_off"
 
 CONF_OFF_MODE: Final = "off_mode"
 CONF_FROST_TEMPERATURE: Final = "frost_temperature"
+CONF_ROOMS: Final = "rooms"  # multi-select of thermostats in the add-rooms forms
 
 # What a room does while the master thermostat is switched off
 MASTER_OFF_TURN_OFF: Final = "off"  # switch the room thermostat off too

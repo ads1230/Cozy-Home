@@ -610,3 +610,71 @@ async def test_schedule_off_block_uses_frost(
     set_trv(hass, BEDROOM, temperature=7.5)  # the TRV applied it
     await _tick(hass, freezer, _utc(0, 17, 0))
     assert _temps(climate_calls) == [7.5, 18.0]
+
+
+async def test_schedule_sensors_and_entity_id_targets(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The card reads schedules from sensors and targets actions by entity_id."""
+    freezer.move_to(_utc(0, 9, 0))  # Monday 09:00
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+
+    room = hass.states.get("sensor.bedroom_schedule")
+    assert room.state == "none"
+    assert room.attributes["cozy_home"] is True
+    assert room.attributes["kind"] == "room"
+    assert room.attributes["modes"] == ["follow", "fixed", "off"]
+    assert room.attributes["schedule"] == {}
+    hub = hass.states.get("sensor.heating_schedule")
+    assert hub.attributes["kind"] == "master"
+    assert hub.attributes["modes"] == ["fixed", "off"]
+
+    await hass.services.async_call(
+        DOMAIN,
+        "set_schedule",
+        {
+            "entity_id": "sensor.bedroom_schedule",
+            "schedule": {"mon": [{"time": "08:00", "mode": "fixed", "temperature": 19}]},
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    room = hass.states.get("sensor.bedroom_schedule")
+    assert room.state == "fixed 19°"
+    assert room.attributes["active_day"] == "mon"
+    assert room.attributes["active_time"] == "08:00"
+    assert room.attributes["schedule"]["mon"][0]["temperature"] == 19.0
+    assert _temps(climate_calls) == [19.0]
+
+    await hass.services.async_call(
+        DOMAIN, "clear_schedule", {"entity_id": "sensor.bedroom_schedule"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.bedroom_schedule").state == "none"
+
+    import pytest
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "clear_schedule", {"entity_id": "sensor.not_ours"}, blocking=True
+        )
+
+
+async def test_card_is_served(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client, climate_calls
+) -> None:
+    """The bundled dashboard card is served from the integration's static path."""
+    set_master(hass)
+    set_trv(hass, BEDROOM)
+    await setup_integration(hass, config_entry)
+    client = await hass_client()
+    resp = await client.get("/cozy_home/cozy-home-schedule-card.js")
+    assert resp.status == 200
+    body = await resp.text()
+    assert "cozy-home-schedule-card" in body

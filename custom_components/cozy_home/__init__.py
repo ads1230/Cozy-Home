@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+import logging
+from functools import partial
+from pathlib import Path
+
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .controller import HeatingController
 from .services import async_setup_services
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.NUMBER,
@@ -22,13 +31,39 @@ PLATFORMS: list[Platform] = [
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+CARD_FILENAME = "cozy-home-schedule-card.js"
+CARD_URL = f"/{DOMAIN}/{CARD_FILENAME}"
+RELOAD_DEBOUNCE_SECONDS = 1.0
+
 type CozyHomeConfigEntry = ConfigEntry[HeatingController]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the integration's services (once, not per entry)."""
+    """Register the services and the dashboard card (once, not per entry)."""
     async_setup_services(hass)
+    await _async_register_card(hass)
     return True
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Serve the bundled schedule card and have the frontend load it.
+
+    The card is a plain JS module in ``www/``; registering it here means the
+    user doesn't have to add a dashboard resource by hand.
+    """
+    card_path = Path(__file__).parent / "www" / CARD_FILENAME
+    if not card_path.is_file():
+        return
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, str(card_path), cache_headers=True)]
+    )
+    if "frontend" not in hass.config.components:
+        return  # e.g. tests, or a headless install
+    # Imported lazily so the integration also loads where the frontend isn't set up.
+    from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
+
+    integration = await async_get_integration(hass, DOMAIN)
+    add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> bool:
@@ -50,15 +85,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> 
 
     # Rooms are subentries; adding/removing/reconfiguring one fires the update
     # listener, and reloading picks the change up. (Flows therefore use the
-    # non-reloading ``async_update_and_abort``.)
+    # non-reloading ``async_update_and_abort``.) Adding several rooms at once
+    # fires the listener once per room, so the reload is debounced.
+    reload = Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=RELOAD_DEBOUNCE_SECONDS,
+        immediate=False,
+        function=partial(hass.config_entries.async_reload, entry.entry_id),
+    )
+
+    async def _async_update_listener(_hass: HomeAssistant, _entry: ConfigEntry) -> None:
+        await reload.async_call()
+
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    entry.async_on_unload(reload.async_shutdown)
 
     controller.async_start()
     return True
-
-
-async def _async_update_listener(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> bool:

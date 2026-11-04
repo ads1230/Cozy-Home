@@ -10,9 +10,15 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CozyHomeConfigEntry
-from .const import STATUSES, SUBENTRY_TYPE_ROOM
-from .entity import CozyHomeRoomEntity
-from .schedule import describe_block
+from .const import (
+    DOMAIN,
+    MASTER_SCHEDULE_MODES,
+    SCHEDULE_MODES,
+    STATUSES,
+    SUBENTRY_TYPE_ROOM,
+)
+from .entity import CozyHomeEntity, CozyHomeRoomEntity
+from .schedule import Block, describe_block
 
 
 async def async_setup_entry(
@@ -20,8 +26,9 @@ async def async_setup_entry(
     entry: CozyHomeConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add the sensors for every room."""
+    """Add the hub schedule sensor and the sensors for every room."""
     controller = entry.runtime_data
+    async_add_entities([MasterScheduleSensor(controller, entry)])
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_ROOM:
             continue
@@ -29,8 +36,70 @@ async def async_setup_entry(
             [
                 RoomTargetSensor(controller, entry, subentry),
                 RoomModeSensor(controller, entry, subentry),
+                RoomScheduleSensor(controller, entry, subentry),
             ],
             config_subentry_id=subentry.subentry_id,
+        )
+
+
+def _schedule_attributes(
+    *,
+    kind: str,
+    schedule: dict[str, list[Block]],
+    active: tuple[str, Block] | None,
+    modes: tuple[str, ...],
+) -> dict[str, Any]:
+    """Attributes the schedule card reads (it finds these sensors by ``cozy_home``)."""
+    return {
+        DOMAIN: True,
+        "kind": kind,
+        "modes": list(modes),
+        "schedule": schedule,
+        "active_day": active[0] if active else None,
+        "active_time": active[1]["time"] if active else None,
+        "active_block": describe_block(active[1]) if active else None,
+    }
+
+
+class RoomScheduleSensor(CozyHomeRoomEntity, SensorEntity):
+    """The room's weekly schedule (state = block in effect now, or 'none')."""
+
+    _attr_translation_key = "schedule"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:calendar-clock"
+
+    @property
+    def native_value(self) -> str:
+        return describe_block(self.room.active_block) or "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        room = self.room
+        active = (room.active_day, room.active_block) if room.active_block else None
+        return _schedule_attributes(
+            kind="room", schedule=room.schedule, active=active, modes=SCHEDULE_MODES
+        )
+
+
+class MasterScheduleSensor(CozyHomeEntity, SensorEntity):
+    """The schedule Home Assistant applies to the master thermostat, if any."""
+
+    _attr_translation_key = "schedule"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:calendar-clock"
+
+    @property
+    def native_value(self) -> str:
+        active = self._controller.master_active_block
+        return describe_block(active[1]) if active else "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return _schedule_attributes(
+            kind="master",
+            schedule=self._controller.master_schedule,
+            active=self._controller.master_active_block,
+            modes=MASTER_SCHEDULE_MODES,
         )
 
 
