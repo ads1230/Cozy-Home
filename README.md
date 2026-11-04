@@ -216,7 +216,8 @@ pip install pytest-homeassistant-custom-component
 pytest
 ```
 
-Releasing: bump `version` in `manifest.json`, commit, then push a matching tag
-(`git tag v0.5.0 && git push origin v0.5.0`). The *Release* workflow publishes the GitHub
-release with a zip of the integration, and HACS picks it up from there. The *Validate*
-workflow runs hassfest, the HACS checks and the test suite on every push.
+Releasing: bump `version` in `manifest.json` and commit. Then on GitHub go to *Releases →
+Draft a new release*, type the matching tag (`v0.5.0`) and choose *Create new tag on publish*,
+click *Generate release notes* and *Publish*. The *Release* workflow attaches a zip of the
+integration, and HACS offers the update from there. (Pushing a `v*` tag from a clone works too.)
+The *Validate* workflow runs hassfest, the HACS checks and the test suite on every push.
