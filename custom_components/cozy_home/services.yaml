@@ -1,0 +1,44 @@
+set_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cozy_home
+    schedule:
+      required: true
+      example: |
+        weekdays:
+          - { time: "06:30", mode: follow }
+          - { time: "08:30", mode: follow, offset: -3 }
+          - { time: "17:00", mode: follow }
+          - { time: "22:00", mode: off }
+        weekend:
+          - { time: "07:30", mode: follow }
+          - { time: "22:30", mode: fixed, temperature: 17 }
+      selector:
+        object:
+
+get_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cozy_home
+
+clear_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cozy_home
+
+sync:
+  fields:
+    device_id:
+      required: false
+      selector:
+        device:
+          integration: cozy_home

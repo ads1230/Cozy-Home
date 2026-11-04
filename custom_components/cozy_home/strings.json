@@ -1,0 +1,159 @@
+{
+  "title": "Cozy Home",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose the master thermostat",
+        "description": "Pick the thermostat that controls the boiler. Rooms you add afterwards will follow its target temperature.",
+        "data": {
+          "master_entity": "Master thermostat",
+          "name": "Name"
+        },
+        "data_description": {
+          "master_entity": "Usually the thermostat that calls for heat from the boiler (for example your Hive thermostat).",
+          "name": "Shown as the hub device name in Home Assistant."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the master thermostat",
+        "data": {
+          "master_entity": "Master thermostat",
+          "name": "Name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "That thermostat is already set up as a master."
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "title": "Room",
+      "entry_type": "Room",
+      "initiate_flow": {
+        "user": "Add room",
+        "reconfigure": "Reconfigure room"
+      },
+      "step": {
+        "user": {
+          "title": "Add a room",
+          "description": "The room thermostat (usually a radiator valve) will follow the master thermostat, adjusted by the offset. If the resulting target is below the cut-off, the room thermostat is turned off instead.",
+          "data": {
+            "name": "Room name",
+            "climate_entity": "Room thermostat",
+            "offset": "Offset",
+            "off_below": "Turn off below"
+          },
+          "data_description": {
+            "offset": "Degrees added to the master target. Use a negative number for a cooler room (-2 with a master of 20° gives 18°).",
+            "off_below": "If the room's target would be below this temperature, the room thermostat is switched off (or set to its frost-protection temperature). More behaviour options — what to do when the master is off, frost protection — are on the room's device page."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure room",
+          "description": "Offset and cut-off set here are only used the first time a room is added; afterwards adjust them with the room's own entities.",
+          "data": {
+            "name": "Room name",
+            "climate_entity": "Room thermostat",
+            "offset": "Offset",
+            "off_below": "Turn off below"
+          }
+        }
+      },
+      "error": {
+        "same_as_master": "That is the master thermostat. Pick a room thermostat instead.",
+        "already_configured": "That thermostat already belongs to another room."
+      },
+      "abort": {
+        "already_configured": "That thermostat already belongs to another room."
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "offset": { "name": "Offset" },
+      "off_below": { "name": "Turn off below" },
+      "frost_temperature": { "name": "Frost protection temperature" }
+    },
+    "select": {
+      "master_off": {
+        "name": "When master is off",
+        "state": {
+          "off": "Turn off",
+          "hold": "Hold last target"
+        }
+      },
+      "off_mode": {
+        "name": "Off mode",
+        "state": {
+          "off": "Thermostat off",
+          "frost": "Frost protection"
+        }
+      }
+    },
+    "switch": {
+      "enabled": { "name": "Enabled" },
+      "follow_master": { "name": "Follow master" }
+    },
+    "sensor": {
+      "target": { "name": "Target temperature" },
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "follow": "Following master",
+          "fixed": "Fixed by schedule",
+          "off": "Off",
+          "frost": "Frost protection",
+          "hold": "Holding (master off)",
+          "disabled": "Disabled",
+          "unavailable": "Unavailable"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_schedule": {
+      "name": "Set schedule",
+      "description": "Replace the weekly schedule of a room (or of the master thermostat, when you pick the hub device).",
+      "fields": {
+        "device_id": {
+          "name": "Room",
+          "description": "The room to schedule, or the hub device to schedule the master thermostat itself."
+        },
+        "schedule": {
+          "name": "Schedule",
+          "description": "Days (mon..sun, or weekdays / weekend / all) mapping to a list of blocks. Each block has a time (HH:MM) and a mode: follow (master + offset; optionally its own offset), fixed (a temperature), or off. A block lasts until the next one starts. The master thermostat accepts only fixed and off."
+        }
+      }
+    },
+    "get_schedule": {
+      "name": "Get schedule",
+      "description": "Return the weekly schedule of a room or of the master thermostat, plus the block currently in effect.",
+      "fields": {
+        "device_id": { "name": "Room", "description": "The room, or the hub device for the master thermostat." }
+      }
+    },
+    "clear_schedule": {
+      "name": "Clear schedule",
+      "description": "Remove the schedule so the room simply follows the master (or the master is left to its own schedule).",
+      "fields": {
+        "device_id": { "name": "Room", "description": "The room, or the hub device for the master thermostat." }
+      }
+    },
+    "sync": {
+      "name": "Sync now",
+      "description": "Recompute and push targets to the thermostats right away, even if nothing changed. Useful from an automation if a thermostat tends to drift back to its own schedule.",
+      "fields": {
+        "device_id": { "name": "Room", "description": "Only this room (or this hub). Leave empty to sync everything." }
+      }
+    }
+  },
+  "exceptions": {
+    "device_not_found": {
+      "message": "Device {device_id} is not a Cozy Home room or hub."
+    },
+    "invalid_schedule": {
+      "message": "Invalid schedule: {error}"
+    }
+  }
+}

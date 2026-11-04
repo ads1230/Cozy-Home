@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200">
+  <g transform="translate(16 20) scale(0.37037) translate(-40 -48)">
+
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F6B04E"/>
+      <stop offset="1" stop-color="#EE8A45"/>
+    </linearGradient>
+  </defs>
+  <!-- body -->
+  <rect x="104" y="196" width="304" height="280" rx="30" fill="url(#body)"/>
+  <!-- chimney -->
+  <rect x="344" y="104" width="60" height="120" rx="12" fill="#D9603B"/>
+  <!-- roof -->
+  <path d="M72 252 L256 80 L440 252" fill="none" stroke="#D9603B" stroke-width="56"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- warmth -->
+  <g fill="none" stroke="#FFF7EA" stroke-width="28" stroke-linecap="round">
+    <path d="M184 436 c -24 -26 -24 -58 0 -84 c 24 -26 24 -58 0 -84"/>
+    <path d="M256 436 c -24 -26 -24 -58 0 -84 c 24 -26 24 -58 0 -84"/>
+    <path d="M328 436 c -24 -26 -24 -58 0 -84 c 24 -26 24 -58 0 -84"/>
+  </g>
+
+  </g>
+  <text x="196" y="128" font-family="Poppins" font-weight="bold" font-size="92"
+        fill="#3B2A26" letter-spacing="-1">Cozy Home</text>
+</svg>
