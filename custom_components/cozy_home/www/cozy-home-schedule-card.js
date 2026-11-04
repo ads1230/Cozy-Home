@@ -10,7 +10,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.6.1"; // kept in step with manifest.json
+  const VERSION = "0.6.2"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];

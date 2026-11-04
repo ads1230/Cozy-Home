@@ -163,6 +163,7 @@ class HeatingController:
         self.resync_minutes = int(entry.options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES))
         self.master_active_block: tuple[str, Block] | None = None
         self._last_resync: datetime | None = None
+        self._ready = False  # no pushes until Home Assistant has fully started
 
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
@@ -241,6 +242,7 @@ class HeatingController:
     def async_start(self) -> None:
         """Run the first sync once Home Assistant is fully started."""
         if self.hass.state is CoreState.running:
+            self._ready = True
             self.entry.async_create_task(self.hass, self.async_sync_all())
         else:
             self._unsubs.append(
@@ -248,6 +250,7 @@ class HeatingController:
             )
 
     async def _async_on_started(self, _event: Event) -> None:
+        self._ready = True
         await self.async_sync_all()
 
     async def async_unload(self) -> None:
@@ -369,6 +372,8 @@ class HeatingController:
     # ------------------------------------------------------------------ events
 
     async def _async_state_changed(self, event: Event[EventStateChangedData]) -> None:
+        if not self._ready:
+            return  # the first sync after startup covers everything
         entity_id = event.data["entity_id"]
         if entity_id == self.master_entity:
             await self.async_sync_all()
@@ -384,6 +389,8 @@ class HeatingController:
                 await self.async_sync_room(room.subentry_id, force=not new_bad)
 
     async def _async_minute_tick(self, now: datetime) -> None:
+        if not self._ready:
+            return
         # Normally only changes are pushed. With a re-sync interval set, targets
         # are re-applied periodically so a thermostat that drifted back to its
         # own schedule is corrected (nothing is sent if it already matches).

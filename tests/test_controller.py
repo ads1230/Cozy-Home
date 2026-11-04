@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
@@ -11,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -300,11 +301,17 @@ async def test_waits_for_home_assistant_start(
     set_trv(hass, BEDROOM, temperature=15)
     await setup_integration(hass, config_entry)
     assert _temps(climate_calls) == []
+    # Neither a minute tick nor a state change pushes anything before HA has started
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=1))
+    await hass.async_block_till_done()
+    set_master(hass, temperature=21)
+    await hass.async_block_till_done()
+    assert _temps(climate_calls) == []
 
     hass.set_state(CoreState.running)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
-    assert _temps(climate_calls) == [18.0]
+    assert _temps(climate_calls) == [19.0]  # master is 21 by now
 
 
 async def test_settings_persist_across_reload(
