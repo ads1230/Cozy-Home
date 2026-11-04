@@ -11,7 +11,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.5"; // kept in step with manifest.json
+  const VERSION = "0.8.6"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>
@@ -169,8 +169,7 @@
       const hub = this._hub.state;
       const schedText = bad(hub) ? "" : hub.state;
       const hasSchedule = schedText && !/^Not scheduled/.test(schedText);
-      const mode = off ? "off" : hasSchedule ? "scheduled" : c.state === "auto" ? "auto" : "manual";
-      const preset = a.preset_mode && a.preset_mode !== "none" ? ` · ${esc(a.preset_mode)}` : "";
+      const preset = a.preset_mode && a.preset_mode !== "none" ? esc(a.preset_mode) : "";
       const scheduleLine =
         this._config.show_schedule && hasSchedule
           ? `<div class="sched"><ha-icon icon="mdi:calendar-clock"></ha-icon>Schedule: ${esc(schedText)}</div>`
@@ -188,7 +187,7 @@
           <a href="#" class="name" data-action="more-info">
             <ha-icon icon="mdi:water-boiler" class="${statusClass}"></ha-icon>${esc(a.friendly_name || this._climateId)}
           </a>
-          <span class="mode">${esc(mode)}${preset}</span>
+          ${preset ? `<span class="mode">${preset}</span>` : ""}
         </div>
         <div class="main">
           <div class="reading">

@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.5"; // kept in step with manifest.json
+  const VERSION = "0.8.6"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -166,6 +166,10 @@
         sched && sched.attributes.active_time,
         t && pick(t.modeEntity),
         t && pick(t.targetEntity),
+        (() => {
+          const c = sched && sched.attributes.master_entity && states[sched.attributes.master_entity];
+          return c ? [c.state, c.attributes.hvac_modes] : null;
+        })(),
         this._hass.config && this._hass.config.time_zone,
       ]);
     }
@@ -494,6 +498,7 @@
       const header = `
         <div class="head">
           <div class="title">${esc(this._config.title || "Heating schedule")}</div>
+          ${this._modeBadgeHTML(t)}
           ${showPicker
             ? `<select data-role="target" ${this._busy ? "disabled" : ""}>
                 ${this._targets
@@ -549,6 +554,18 @@
       this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${header}${body}${msg}</ha-card>`;
       this._rendered = true;
       this._renderNow();
+    }
+
+    /** The thermostat's own mode (Auto = its app schedule, Manual, Off), if it has one. */
+    _modeBadgeHTML(t) {
+      if (!t || t.kind !== "master") return "";
+      const sched = this._hass.states[t.entity_id];
+      const climate = sched && sched.attributes.master_entity && this._hass.states[sched.attributes.master_entity];
+      if (!climate || /^(unknown|unavailable)$/.test(climate.state)) return "";
+      const modes = climate.attributes.hvac_modes || [];
+      if (!modes.includes("auto")) return ""; // no schedule/manual distinction on this thermostat
+      const label = climate.state === "auto" ? "Auto" : climate.state === "off" ? "Off" : "Manual";
+      return `<span class="badge ${esc(climate.state)}" title="The thermostat's own mode">${label}</span>`;
     }
 
     _statusHTML(t) {
@@ -711,6 +728,12 @@
     :host { --ch-follow: #E07A3A; --ch-fixed: #D6C94B; --ch-off: #62A9B5; --ch-fixed-ink: #3b2a26; }
     ha-card { padding: 16px; }
     .head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .badge { margin-left: auto; font-size: 0.8em; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 12px; border: 1.5px solid var(--divider-color, #ddd); color: var(--secondary-text-color); }
+    .badge.auto { border-color: var(--ch-off); color: var(--ch-off); }
+    .badge.heat { border-color: var(--ch-follow); color: var(--ch-follow); }
+    .head select { margin-left: auto; }
+    .head .badge + select { margin-left: 0; }
     .title { font-size: 1.3em; font-weight: 500; flex: 1; }
     select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color, #fff);
       border: 1px solid var(--divider-color, #ddd); border-radius: 8px; padding: 6px 10px; max-width: 60%; }
