@@ -5,8 +5,8 @@
 
 A Home Assistant custom integration that makes your room thermostats (TRVs) follow one
 **master** thermostat — the one that controls the boiler — with a per-room temperature
-**offset**, a per-room cut-off (or **frost protection**), and one Hive-style **heating
-schedule** for the master that the rooms follow.
+**offset**, a per-room cut-off (or **frost protection**), one Hive-style **heating
+schedule** for the master that the rooms follow, and a **boost** for thermostats that have none.
 
 ```
 master (Hive, 20°)
@@ -198,10 +198,10 @@ to move it, ＋/－ add and remove blocks, ⧉ copies a day to other days, then 
 *Remove schedule* hands control back to the thermostat's own schedule.
 
 Turning the thermostat up by hand holds until the next block, exactly like a normal
-thermostat. A **boost** is left to finish: if a block starts while the thermostat reports a
-boost, Home Assistant waits and applies that block the moment the boost ends (the schedule
-card says "boost running — the schedule resumes when it ends"). Rooms follow the boosted
-target meanwhile. If you want the schedule re-imposed regardless of manual changes, set
+thermostat. A **boost** is left to finish: if a block starts during a boost — the thermostat's
+own, or a Cozy Home [boost](#boost) — Home Assistant waits and applies that block the moment
+the boost ends (the schedule card says "boost running — the schedule resumes when it ends").
+Rooms follow the boosted target meanwhile. If you want the schedule re-imposed regardless of manual changes, set
 *Re-apply targets every* in Configure (it also respects a running boost).
 
 ### From an automation or Developer tools
