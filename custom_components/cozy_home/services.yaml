@@ -1,10 +1,16 @@
 set_schedule:
   fields:
     device_id:
-      required: true
+      required: false
       selector:
         device:
           integration: cozy_home
+    entity_id:
+      required: false
+      selector:
+        entity:
+          integration: cozy_home
+          domain: sensor
     schedule:
       required: true
       example: |
@@ -22,18 +28,30 @@ set_schedule:
 get_schedule:
   fields:
     device_id:
-      required: true
+      required: false
       selector:
         device:
           integration: cozy_home
+    entity_id:
+      required: false
+      selector:
+        entity:
+          integration: cozy_home
+          domain: sensor
 
 clear_schedule:
   fields:
     device_id:
-      required: true
+      required: false
       selector:
         device:
           integration: cozy_home
+    entity_id:
+      required: false
+      selector:
+        entity:
+          integration: cozy_home
+          domain: sensor
 
 sync:
   fields:
@@ -42,3 +60,9 @@ sync:
       selector:
         device:
           integration: cozy_home
+    entity_id:
+      required: false
+      selector:
+        entity:
+          integration: cozy_home
+          domain: sensor

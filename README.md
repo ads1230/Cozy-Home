@@ -20,9 +20,11 @@ Requires Home Assistant **2025.3 or newer** (rooms are config subentries).
 ## Install
 
 **HACS:** add this repository as a custom repository (type *Integration*), install, restart.
+Releases are tagged, so HACS shows the version and offers updates under Settings → Updates.
 
-**Manual:** copy `custom_components/cozy_home/` into your config's
-`custom_components/` folder and restart Home Assistant.
+**Manual:** download `cozy_home.zip` from the latest
+[release](https://github.com/ads1230/Cozy-Home/releases), unzip it into
+`config/custom_components/cozy_home/` and restart Home Assistant.
 
 Then **Settings → Devices & services → Add integration → Cozy Home**.
 
@@ -213,3 +215,8 @@ appears in HA only once it has been merged there. To do that:
 pip install pytest-homeassistant-custom-component
 pytest
 ```
+
+Releasing: bump `version` in `manifest.json`, commit, then push a matching tag
+(`git tag v0.5.0 && git push origin v0.5.0`). The *Release* workflow publishes the GitHub
+release with a zip of the integration, and HACS picks it up from there. The *Validate*
+workflow runs hassfest, the HACS checks and the test suite on every push.

@@ -1,0 +1,39 @@
+name: Release
+
+# Pushing a tag like v0.4.0 publishes a GitHub release for it. HACS reads
+# releases to show version numbers and offer updates.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches manifest.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(jq -r .version custom_components/cozy_home/manifest.json)"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $version" >&2
+            exit 1
+          fi
+
+      - name: Build the integration zip
+        run: |
+          cd custom_components/cozy_home
+          zip -r ../../cozy_home.zip . -x "__pycache__/*"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" cozy_home.zip \
+            --title "Cozy Home ${GITHUB_REF_NAME#v}" \
+            --generate-notes

@@ -167,11 +167,15 @@
       "fields": {
         "device_id": {
           "name": "Room",
-          "description": "The room to schedule, or the hub device to schedule the master thermostat itself."
+          "description": "The room to schedule, or the hub device to schedule the master thermostat itself (or give the schedule entity instead)."
         },
         "schedule": {
           "name": "Schedule",
           "description": "Days (mon..sun, or weekdays / weekend / all) mapping to a list of blocks. Each block has a time (HH:MM) and a mode: follow (master + offset; optionally its own offset), fixed (a temperature), or off. A block lasts until the next one starts. The master thermostat accepts only fixed and off."
+        },
+        "entity_id": {
+          "name": "Schedule entity",
+          "description": "Alternatively, the room's (or hub's) schedule sensor. Either this or the device is required."
         }
       }
     },
@@ -181,7 +185,11 @@
       "fields": {
         "device_id": {
           "name": "Room",
-          "description": "The room, or the hub device for the master thermostat."
+          "description": "The room, or the hub device for the master thermostat (or give the schedule entity instead)."
+        },
+        "entity_id": {
+          "name": "Schedule entity",
+          "description": "Alternatively, the room's (or hub's) schedule sensor. Either this or the device is required."
         }
       }
     },
@@ -191,7 +199,11 @@
       "fields": {
         "device_id": {
           "name": "Room",
-          "description": "The room, or the hub device for the master thermostat."
+          "description": "The room, or the hub device for the master thermostat (or give the schedule entity instead)."
+        },
+        "entity_id": {
+          "name": "Schedule entity",
+          "description": "Alternatively, the room's (or hub's) schedule sensor. Either this or the device is required."
         }
       }
     },
@@ -201,7 +213,11 @@
       "fields": {
         "device_id": {
           "name": "Room",
-          "description": "Only this room (or this hub). Leave empty to sync everything."
+          "description": "Only this room (or this hub). Leave empty to sync everything (or give the schedule entity instead)."
+        },
+        "entity_id": {
+          "name": "Schedule entity",
+          "description": "Only the room (or hub) this schedule sensor belongs to. Leave both empty to sync everything."
         }
       }
     }
