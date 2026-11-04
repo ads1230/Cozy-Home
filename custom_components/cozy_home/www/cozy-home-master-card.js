@@ -11,7 +11,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.4"; // kept in step with manifest.json
+  const VERSION = "0.8.5"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>
@@ -192,7 +192,8 @@
         </div>
         <div class="main">
           <div class="reading">
-            <span class="big">${current != null ? esc(num(Number(current))) : "–"}</span><span class="unit">${esc(unit)}</span>
+            <span class="lbl">Current temp</span>
+            <div><span class="big">${current != null ? esc(num(Number(current))) : "–"}</span><span class="unit">${esc(unit)}</span></div>
           </div>
           <div class="side">
             <div class="status ${statusClass}"><ha-icon icon="${statusIcon}"></ha-icon><span>${statusText}</span></div>
@@ -216,7 +217,10 @@
     .name ha-icon.heating { color: var(--ch-follow); }
     .mode { margin-left: auto; color: var(--secondary-text-color); font-size: 0.85em; text-transform: capitalize; }
     .main { display: flex; align-items: center; gap: 24px; margin: 8px 0 4px; flex-wrap: wrap; }
-    .reading { display: flex; align-items: baseline; }
+    .reading { display: flex; flex-direction: column; gap: 2px; }
+    .reading > div { display: flex; align-items: baseline; }
+    .lbl { font-size: 0.72em; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--secondary-text-color); }
     .big { font-size: 3.4em; font-weight: 300; line-height: 1; letter-spacing: -0.02em; }
     .unit { font-size: 1.3em; color: var(--secondary-text-color); margin-left: 4px; }
     .side { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 180px; }

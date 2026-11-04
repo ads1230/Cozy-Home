@@ -13,7 +13,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.4"; // kept in step with manifest.json
+  const VERSION = "0.8.5"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
     follow: "Following master",
@@ -337,9 +337,10 @@
             <span class="sub">${esc(modeText)}${reason}${block}</span>
           </div>
           <div class="vals">
-            <span class="big">${esc(temp(r.current))}</span>
-            <span class="arrow">→</span>
-            <span class="big">${r.modeKey === "off" ? "off" : esc(temp(r.target))}</span>
+            <div class="stat"><span class="lbl">Current temp</span><span class="big">${esc(temp(r.current))}</span></div>
+            <div class="stat"><span class="lbl">Heating to</span><span class="big">${
+              r.modeKey === "off" ? "Off" : r.modeKey === "hold" || r.target == null ? "–" : esc(temp(r.target))
+            }</span></div>
             <span class="spacer"></span>
             ${
               r.ents.offset
@@ -376,8 +377,11 @@
     .name { font-weight: 500; color: var(--primary-text-color); text-decoration: none; }
     .name:hover { text-decoration: underline; }
     .sub { color: var(--secondary-text-color); font-size: 0.85em; }
-    .vals { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-left: 28px; }
-    .big { font-size: 1.25em; font-weight: 500; }
+    .vals { display: flex; align-items: flex-end; gap: 20px; margin-top: 6px; padding-left: 28px; }
+    .stat { display: flex; flex-direction: column; gap: 2px; min-width: 5.5em; }
+    .lbl { font-size: 0.68em; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--secondary-text-color); }
+    .big { font-size: 1.35em; font-weight: 500; line-height: 1.1; }
     .arrow { color: var(--secondary-text-color); }
     .spacer { flex: 1; }
     .muted { color: var(--secondary-text-color); font-size: 0.85em; }
@@ -385,7 +389,8 @@
       background: var(--secondary-background-color, rgba(0,0,0,0.05)); --mdc-icon-size: 14px; margin-left: 4px; }
     .chip.heat { background: var(--ch-follow); color: #fff; }
     .chip.off { background: var(--ch-off); color: #fff; }
-    .offset { display: inline-flex; align-items: center; gap: 4px; }
+    .offset { display: inline-flex; align-items: center; gap: 4px; align-self: center; }
+    .vals .toggle { align-self: center; }
     .offval { min-width: 3.2em; text-align: center; font-size: 0.95em; }
     button { font: inherit; cursor: pointer; }
     button:disabled { opacity: 0.4; cursor: default; }
