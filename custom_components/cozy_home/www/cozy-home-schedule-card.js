@@ -1,16 +1,20 @@
 /*
- * Cozy Home schedule card — a Hive-style weekly schedule editor.
+ * Cozy Home schedule card — the heating schedule, Hive-style.
  *
- * Bundled with the Cozy Home integration and loaded automatically; no
- * dashboard resource needs adding. Add a card of type
+ * One weekly timeline of temperatures (and ❄ off) for the master
+ * thermostat; rooms follow it with their temperature offsets. Bundled with
+ * the Cozy Home integration and loaded automatically. Add a card of type
  * `custom:cozy-home-schedule-card` (no options required).
  *
- * Reads schedules from the `sensor.<room>_schedule` entities and saves
- * them with the `cozy_home.set_schedule` action.
+ * Advanced: `entity: sensor.<room>_schedule` edits a per-room schedule
+ * instead (those sensors are disabled by default).
+ *
+ * Reads the schedule from the hub's `sensor.<hub>_schedule` entity and
+ * saves it with the `cozy_home.set_schedule` action.
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.6.2"; // kept in step with manifest.json
+  const VERSION = "0.7.0"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -20,7 +24,7 @@
   const TEMP_MAX = 30;
   const OFFSET_MIN = -10;
   const OFFSET_MAX = 10;
-  const MODE_LABEL = { follow: "Master", fixed: "Fixed", off: "Off" };
+  const MODE_LABEL = { follow: "Master", fixed: "Temperature", off: "Off" };
   const DEFAULT_MASTER = {
     all: [
       { time: "00:00", mode: "off" },
@@ -211,10 +215,11 @@
           modeEntity,
         });
       }
-      targets.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "master" ? 1 : -1));
+      targets.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "master" ? -1 : 1));
       this._targets = targets;
       if (!this._selected || !targets.some((t) => t.entity_id === this._selected)) {
-        this._selected = targets.length ? targets[0].entity_id : null;
+        const master = targets.find((t) => t.kind === "master");
+        this._selected = master ? master.entity_id : targets.length ? targets[0].entity_id : null;
         this._saved = this._draft = null;
         this._sel = null;
       }
@@ -394,10 +399,12 @@
         case "clear":
           this._clear();
           return;
-        case "create-master":
-          this._draft = normalize(DEFAULT_MASTER, "master");
+        case "create-master": {
+          const t = this._target();
+          this._draft = t && t.kind === "master" ? normalize(DEFAULT_MASTER, "master") : normalize({}, "room");
           this._sel = null;
           break;
+        }
         default:
           return;
       }
@@ -483,10 +490,11 @@
       if (!this._hass) return;
       const t = this._target();
       const dirty = this._dirty();
+      const showPicker = this._config.show_rooms && this._targets.length > 1;
       const header = `
         <div class="head">
-          <div class="title">${esc(this._config.title || "Schedule")}</div>
-          ${this._targets.length
+          <div class="title">${esc(this._config.title || "Heating schedule")}</div>
+          ${showPicker
             ? `<select data-role="target" ${this._busy ? "disabled" : ""}>
                 ${this._targets
                   .map(
@@ -500,12 +508,19 @@
 
       let body;
       if (!t) {
-        body = `<div class="empty">No Cozy Home rooms found. Add the integration and some rooms first — or, if you have just updated Cozy Home, reload this page (Ctrl/Cmd-Shift-R).</div>`;
+        body = `<div class="empty">Cozy Home isn't set up yet — add the integration first. (If you have just updated Cozy Home, reload this page with Ctrl/Cmd-Shift-R.)</div>`;
       } else if (!this._draft) {
-        body = `
+        body =
+          t.kind === "master"
+            ? `
           <div class="empty">
-            <p><b>${esc(t.name)}</b> is left to its own schedule (the thermostat's app). Create a schedule here to have Home Assistant drive it instead — then switch the thermostat's own schedule off so they don't take turns.</p>
+            <p>The heating currently runs on the thermostat's own schedule (the one in its app). Create a schedule here and Home Assistant takes over: it sets the master thermostat's temperature at each change and the rooms follow with their offsets. Turn the schedule off in the thermostat's app afterwards so the two don't take turns.</p>
             <button class="pill primary" data-action="create-master">Create schedule</button>
+          </div>`
+            : `
+          <div class="empty">
+            <p><b>${esc(t.name)}</b> has no schedule of its own; it follows the heating schedule with its offset.</p>
+            <button class="pill primary" data-action="create-master">Create a room schedule</button>
           </div>`;
       } else {
         body = `
@@ -518,10 +533,10 @@
           ${this._copyOpen ? this._copyHTML() : ""}
           <div class="editor">${this._editorInnerHTML()}</div>
           <div class="legend">
-            <span><i class="sw follow"></i>master${t.kind === "master" ? "" : " + offset"}</span>
-            <span><i class="sw fixed"></i>fixed temperature</span>
-            <span><i class="sw off"></i>off / frost</span>
-            <a href="#" data-action="clear" class="clear">Remove schedule</a>
+            ${t.kind === "master" ? "" : `<span><i class="sw follow"></i>heating schedule + offset</span>`}
+            <span><i class="sw fixed"></i>temperature</span>
+            <span><i class="sw off"></i>off (frost protection)</span>
+            <a href="#" data-action="clear" class="clear">${t.kind === "master" ? "Remove schedule (back to the thermostat's own)" : "Remove room schedule"}</a>
           </div>`;
       }
 
@@ -538,6 +553,13 @@
 
     _statusHTML(t) {
       const states = this._hass.states;
+      if (t.kind === "master") {
+        const sched = states[t.entity_id];
+        const climate = sched && sched.attributes.master_entity && states[sched.attributes.master_entity];
+        const now = sched && !/^(unknown|unavailable)$/.test(sched.state) ? sched.state : "";
+        const cur = climate && climate.attributes.current_temperature != null ? ` · thermostat ${esc(num(Number(climate.attributes.current_temperature)))}° → ${esc(num(Number(climate.attributes.temperature)))}°` : "";
+        return now ? `Now: ${esc(now)}${cur}` : "";
+      }
       const mode = t.modeEntity && states[t.modeEntity];
       const target = t.targetEntity && states[t.targetEntity];
       if (!mode) return "";
@@ -590,7 +612,8 @@
         const left = (start / 1440) * 100;
         const width = ((end - start) / 1440) * 100;
         const selected = this._sel && this._sel.day === day && this._sel.idx === idx;
-        const cls = `blk ${b.mode} ${idx === 0 ? "first" : ""} ${idx === blocks.length - 1 ? "last" : ""} ${selected ? "selected" : ""}`;
+        const warmth = b.mode === "fixed" ? (b.temperature >= 20 ? " warm" : b.temperature >= 17 ? " mild" : "") : "";
+        const cls = `blk ${b.mode}${warmth} ${idx === 0 ? "first" : ""} ${idx === blocks.length - 1 ? "last" : ""} ${selected ? "selected" : ""}`;
         const title = `${DAY_NAMES[day]} ${b.time}–${toTime(end % 1440)} · ${this._describe(b)}`;
         out += `<div class="${cls}" style="left:${left}%;width:${width}%" data-action="select-block" data-day="${day}" data-idx="${idx}" title="${esc(title)}">
             ${idx > 0 ? `<div class="grip" data-handle data-day="${day}" data-idx="${idx}"></div>` : ""}
@@ -647,7 +670,7 @@
           <button class="round sm" data-action="inc">+</button>
           ${blk.offset != null ? `<a href="#" class="link" data-action="reset-offset">use room offset</a>` : ""}`;
       } else {
-        value = `<span class="muted">${t.kind === "master" ? "Master thermostat off" : "Thermostat off — or frost protection, if that's the room's off mode"}</span>`;
+        value = `<span class="muted">${t.kind === "master" ? "Heating off (the thermostat's frost protection still applies)" : "Thermostat off — or frost protection, per the room's Off action"}</span>`;
       }
       return `
         <div class="edhead"><b>${DAY_NAMES[day]}</b> · ${esc(blk.time)} – ${esc(toTime(end % 1440))}</div>
@@ -720,6 +743,8 @@
     .blk.last { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
     .blk.follow { background: var(--ch-follow); }
     .blk.fixed { background: var(--ch-fixed); color: var(--ch-fixed-ink); }
+    .blk.fixed.mild { background: #F2A541; }
+    .blk.fixed.warm { background: var(--ch-follow); color: #fff; }
     .blk.off { background: var(--ch-off); }
     .blk.selected { box-shadow: 0 0 0 2px var(--card-background-color, #fff), 0 0 0 4px var(--ch-follow); }
     .blk .lbl { pointer-events: none; white-space: nowrap; }
@@ -727,6 +752,7 @@
     .grip::after { content: ""; position: absolute; left: 5px; top: 30%; bottom: 30%; width: 3px; border-radius: 2px;
       background: rgba(255,255,255,0.55); }
     .blk.fixed .grip::after { background: rgba(0,0,0,0.25); }
+    .blk.fixed.warm .grip::after { background: rgba(255,255,255,0.55); }
     .nowline { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--secondary-text-color); opacity: 0.7;
       transform: translateX(-1px); pointer-events: none; }
     .panel, .editor { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--secondary-background-color, rgba(0,0,0,0.04)); }
@@ -773,7 +799,7 @@
     window.customCards.push({
       type: CARD_TYPE,
       name: "Cozy Home Schedule",
-      description: "Hive-style weekly schedule editor for Cozy Home rooms and the master thermostat.",
+      description: "Hive-style weekly heating schedule for the master thermostat; rooms follow it with their offsets.",
       preview: true,
     });
   }

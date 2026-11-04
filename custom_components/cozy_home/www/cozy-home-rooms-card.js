@@ -13,7 +13,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.6.2"; // kept in step with manifest.json
+  const VERSION = "0.7.0"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
     follow: "Following master",
@@ -128,31 +128,35 @@
         if (!byDevice.has(e.device_id)) byDevice.set(e.device_id, {});
         byDevice.get(e.device_id)[e.translation_key] = entityId;
       }
-      // Fallback without a registry: find schedule sensors by their marker attribute.
+      // Fallback without a registry: find the marker-carrying sensors.
       if (!byDevice.size) {
         for (const [entityId, st] of Object.entries(hass.states)) {
-          if (st.attributes.integration === DOMAIN && st.attributes.kind) byDevice.set(entityId, { schedule: entityId });
+          if (st.attributes.integration !== DOMAIN || !st.attributes.kind) continue;
+          if (st.attributes.kind === "master") byDevice.set(entityId, { schedule: entityId });
+          else if (st.attributes.thermostats) byDevice.set(entityId, { target: entityId });
         }
       }
       const rooms = [];
       let master = null;
       for (const [deviceId, ents] of byDevice) {
-        const sched = ents.schedule && hass.states[ents.schedule];
-        if (!sched) continue;
         const device = devices[deviceId] || {};
-        const name =
-          device.name_by_user || device.name || String(sched.attributes.friendly_name || "").replace(/\s*Schedule$/i, "");
-        if (sched.attributes.kind === "master") {
+        const sched = ents.schedule && hass.states[ents.schedule];
+        const target = ents.target && hass.states[ents.target];
+        if (sched && sched.attributes.kind === "master") {
+          const name = device.name_by_user || device.name || String(sched.attributes.friendly_name || "").replace(/\s*Schedule$/i, "");
           master = { deviceId, name, ents, sched };
-        } else {
-          rooms.push({ deviceId, name, ents, sched });
+        } else if (target) {
+          const name = device.name_by_user || device.name || String(target.attributes.friendly_name || "").replace(/\s*Target temperature$/i, "");
+          rooms.push({ deviceId, name, ents, sched: sched || null });
         }
       }
       rooms.sort((a, b) => a.name.localeCompare(b.name));
       if (Array.isArray(this._config.rooms) && this._config.rooms.length) {
+        // `rooms:` lists room entities (target or schedule sensors), in order
         const order = this._config.rooms;
-        const picked = rooms.filter((r) => order.includes(r.ents.schedule));
-        picked.sort((a, b) => order.indexOf(a.ents.schedule) - order.indexOf(b.ents.schedule));
+        const key = (r) => order.find((e) => e === r.ents.target || e === r.ents.schedule);
+        const picked = rooms.filter((r) => key(r) !== undefined);
+        picked.sort((a, b) => order.indexOf(key(a)) - order.indexOf(key(b)));
         this._rooms = picked;
       } else {
         this._rooms = rooms;

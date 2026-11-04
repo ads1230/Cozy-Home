@@ -693,22 +693,49 @@ async def test_schedule_sensors_and_entity_id_targets(
     climate_calls,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The card reads schedules from sensors and targets actions by entity_id."""
+    """One heating schedule on the hub; per-room schedule sensors are off by default."""
     freezer.move_to(_utc(0, 9, 0))  # Monday 09:00
     set_master(hass, temperature=20)
     set_trv(hass, BEDROOM, temperature=18)
     await setup_integration(hass, config_entry)
 
-    room = hass.states.get("sensor.bedroom_schedule")
-    assert room.state == "No schedule"
-    assert room.attributes["integration"] == "cozy_home"
-    assert room.attributes["kind"] == "room"
-    assert room.attributes["modes"] == ["follow", "fixed", "off"]
-    assert room.attributes["schedule"] == {}
     hub = hass.states.get("sensor.heating_schedule")
+    assert hub.state == "Not scheduled here"
+    assert hub.attributes["integration"] == "cozy_home"
     assert hub.attributes["kind"] == "master"
     assert hub.attributes["modes"] == ["fixed", "off"]
+    assert hub.attributes["schedule"] == {}
+    # The room's target sensor carries the discovery markers; its schedule sensor is disabled
+    target = hass.states.get("sensor.bedroom_target_temperature")
+    assert target.attributes["integration"] == "cozy_home"
+    assert target.attributes["kind"] == "room"
+    assert hass.states.get("sensor.bedroom_schedule") is None
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get("sensor.bedroom_schedule").disabled
 
+    # Actions accept the hub's schedule entity as the target
+    await hass.services.async_call(
+        DOMAIN,
+        "set_schedule",
+        {
+            "entity_id": "sensor.heating_schedule",
+            "schedule": {"mon": [{"time": "08:00", "mode": "fixed", "temperature": 21}]},
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    hub = hass.states.get("sensor.heating_schedule")
+    assert hub.state == "Fixed 21° until Mon 08:00"  # only block in the week
+    assert hub.attributes["active_day"] == "mon"
+    assert _temps(climate_calls, MASTER) == [21.0]
+
+    await hass.services.async_call(
+        DOMAIN, "clear_schedule", {"entity_id": "sensor.heating_schedule"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.heating_schedule").state == "Not scheduled here"
+
+    # A disabled room schedule entity still resolves the room for the actions
     await hass.services.async_call(
         DOMAIN,
         "set_schedule",
@@ -719,18 +746,7 @@ async def test_schedule_sensors_and_entity_id_targets(
         blocking=True,
     )
     await hass.async_block_till_done()
-    room = hass.states.get("sensor.bedroom_schedule")
-    assert room.state == "Fixed 19° until Mon 08:00"  # only block in the week
-    assert room.attributes["active_day"] == "mon"
-    assert room.attributes["active_time"] == "08:00"
-    assert room.attributes["schedule"]["mon"][0]["temperature"] == 19.0
-    assert _temps(climate_calls) == [19.0]
-
-    await hass.services.async_call(
-        DOMAIN, "clear_schedule", {"entity_id": "sensor.bedroom_schedule"}, blocking=True
-    )
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.bedroom_schedule").state == "No schedule"
+    assert _temps(climate_calls, BEDROOM) == [19.0]
 
     import pytest
     from homeassistant.exceptions import ServiceValidationError

@@ -64,10 +64,16 @@ def _schedule_attributes(
 
 
 class RoomScheduleSensor(CozyHomeRoomEntity, SensorEntity):
-    """The room's weekly schedule (state = block in effect now, or 'none')."""
+    """A per-room schedule (advanced; disabled by default).
+
+    Normally there is one schedule, the heating schedule on the master, and
+    rooms follow it with their offsets. Enable this entity to give a room a
+    timeline of its own, editable with the schedule card's ``entity`` option.
+    """
 
     _attr_translation_key = "schedule"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:calendar-clock"
 
     @property
@@ -131,6 +137,8 @@ class RoomTargetSensor(CozyHomeRoomEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         room = self.room
         return {
+            "integration": DOMAIN,  # the dashboard cards find rooms by these two
+            "kind": "room",
             "mode": room.status,
             "reason": room.reason,
             "thermostats": list(room.climate_entities),

@@ -92,7 +92,7 @@ class CozyHomePanel extends HTMLElement {
         this._rooms = freshElement("cozy-home-rooms-card", "rooms");
         this._rooms.setConfig({ title: "Rooms" });
         this._schedule = freshElement("cozy-home-schedule-card", "schedule");
-        this._schedule.setConfig({ title: "Schedule" });
+        this._schedule.setConfig({ title: "Heating schedule" });
         content.append(this._rooms, this._schedule);
         this._push();
       },

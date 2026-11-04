@@ -4,9 +4,9 @@
 </picture>
 
 A Home Assistant custom integration that makes your room thermostats (TRVs) follow one
-**master** thermostat — the one that controls the boiler — with a per-room **offset**, a
-per-room **"turn off below"** cut-off (or **frost protection**), and optional **weekly
-schedules** (Hive-style: time blocks per day).
+**master** thermostat — the one that controls the boiler — with a per-room temperature
+**offset**, a per-room cut-off (or **frost protection**), and one Hive-style **heating
+schedule** for the master that the rooms follow.
 
 ```
 master (Hive, 20°)
@@ -60,7 +60,7 @@ Each room becomes a device with its own controls:
 | `select.<room>_when_master_is_off` | **Off action** (default), or **Hold last target** — leave the thermostats as they are until the master comes back |
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, the room's thermostats and what each was set to, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
-| `sensor.<room>_schedule` | What the schedule is doing now, e.g. "Master -2° until 17:00" or "No schedule"; attribute `schedule` holds the whole week (read by the card) |
+| `sensor.<hub>_schedule` | What the heating schedule is doing, e.g. "Fixed 20° until 22:00"; attribute `schedule` holds the whole week |
 
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
 entities are the source of truth and they survive restarts. The cut-off, off action, frost
@@ -86,7 +86,7 @@ Edit a dashboard → **Add card** → *Cozy Home Rooms*, or in YAML:
 type: custom:cozy-home-rooms-card
 # optional:
 # title: Heating
-# rooms: [sensor.upstairs_schedule, sensor.bedroom_schedule]   # only these, in this order
+# rooms: [sensor.upstairs_target_temperature, sensor.bedroom_target_temperature]   # only these, in this order
 # show_thermostats: true
 # show_master: true
 ```
@@ -104,12 +104,12 @@ room thermostat comes back online:
 
 1. Integration disabled, or room's *Follow master* off → **don't touch** the thermostat.
 2. Every thermostat in the room unavailable → wait (if only some are, the rest are still driven).
-3. Look up the room's **schedule block** currently in effect (if any):
-   * `off` → room **off** (see below)
-   * `fixed` → target = block temperature (master ignored)
-   * `follow` (or no schedule) → target = master target + offset (a block can carry its own offset)
+3. Work out the target:
+   * no room schedule (the normal case) → target = master target + offset
    * master is **off** → room **off**, or **hold** (nothing sent) if *When master is off* = Hold;
      master unavailable → wait
+   * (advanced room schedules: an `off` block → room **off**; `fixed` → that temperature;
+     `follow` → master + offset)
 4. If target < *Cut-off temperature* → room **off**.
 5. Otherwise, for each thermostat in the room: round to its step, clamp to its min/max, switch
    it to **heat** if it was off, and set the temperature.
@@ -133,78 +133,66 @@ every** in the integration's Configure dialog, or call `cozy_home.sync` from an 
 ## The Cozy Home page
 
 After installing, **Cozy Home** appears in the left sidebar. That page has the rooms overview
-and the schedule editor — the same two cards described below — with nothing to configure. Use
-the cards on your own dashboards when you want them laid out your way.
+and the heating schedule editor — the same two cards described below — with nothing to
+configure. Use the cards on your own dashboards when you want them laid out your way.
 
-## Schedules
+## The heating schedule
 
-A schedule is a list of **blocks per day**, exactly like the Hive app: each block starts at a
-time and lasts until the next block starts — rolling over midnight and across the week. If
-Monday has no block at 00:00, Sunday's last block is still in force.
+The boiler fires when the master thermostat calls for heat, so there is **one schedule** and it
+belongs to the master: a weekly timeline of temperatures and ❄ off blocks, like the Hive app.
+Rooms follow it with their **offsets**, which are plain temperature deltas — a bedroom at −2°
+is at 18° when the schedule says 20°. Each block lasts until the next one starts, rolling over
+midnight and across the week.
 
-### The schedule card
+### The schedule editor
 
-The integration bundles two dashboard cards and registers them itself (no *Resources* step):
-*Cozy Home Rooms* (overview, see below) and *Cozy Home Schedule* (the editor).
-Edit a dashboard → **Add card** → search *Cozy Home Schedule*, or in YAML:
+Open **Cozy Home** in the sidebar, or add the card to a dashboard (*Add card → Cozy Home
+Schedule*, or `type: custom:cozy-home-schedule-card`). It starts empty: the heating is running
+on the thermostat's own schedule (the one in its app). **Create schedule** takes over — from
+then on Home Assistant sets the master thermostat's temperature at each change (it switches
+the thermostat to manual mode so its app schedule stops interfering; turn that schedule off in
+the app too). Tap a block to set its time and temperature (or *Off*), drag a block's left edge
+to move it, ＋/－ add and remove blocks, ⧉ copies a day to other days, then **Save**.
+*Remove schedule* hands control back to the thermostat's own schedule.
 
-```yaml
-type: custom:cozy-home-schedule-card
-# optional:
-# title: Heating schedule
-# entity: sensor.bedroom_schedule   # start on this room instead of the first
-```
-
-Pick a room (or the master) in the dropdown. Tap a block to edit it — start time, mode
-(*Master* / *Fixed* / *Off*), temperature or offset — or **drag its left edge** to move the
-start time (15-minute steps). ＋ adds a block after the selected one, － removes it, ⧉ copies
-the day to other days, then **Save** (or **Undo All**). The current time is marked, and the
-status line shows what the room is doing right now.
-
-If the card doesn't show up right after installing, reload the browser page once — the
-frontend only picks up new scripts on load.
+Turning the thermostat up by hand holds until the next block, exactly like a normal
+thermostat. If you want the schedule re-imposed regardless, set *Re-apply targets every* in
+Configure.
 
 ### From an automation or Developer tools
 
-Set one with the `cozy_home.set_schedule` action, targeting either the room **device** or its
-`sensor.<room>_schedule` **entity**. Days are `mon` … `sun`; `weekdays`, `weekend` and `all`
-are shortcuts (an explicit day overrides a shortcut).
+`cozy_home.set_schedule` on the **hub device** (or its `sensor.<hub>_schedule` entity). Days are
+`mon` … `sun`; `weekdays`, `weekend` and `all` are shortcuts (an explicit day overrides a
+shortcut). Blocks are `fixed` with a `temperature`, or `off`.
 
 ```yaml
 action: cozy_home.set_schedule
 data:
-  entity_id: sensor.bedroom_schedule
+  entity_id: sensor.cozy_home_schedule
   schedule:
     weekdays:
-      - { time: "06:30", mode: follow }               # master + room offset
-      - { time: "08:30", mode: follow, offset: -3 }   # master − 3 while at work
-      - { time: "17:00", mode: follow }
-      - { time: "22:00", mode: fixed, temperature: 17 }
-      - { time: "23:30", mode: off }
+      - { time: "06:30", mode: fixed, temperature: 20 }
+      - { time: "08:30", mode: fixed, temperature: 16 }
+      - { time: "17:00", mode: fixed, temperature: 20 }
+      - { time: "22:00", mode: off }
     weekend:
-      - { time: "07:30", mode: follow }
-      - { time: "23:00", mode: off }
+      - { time: "07:30", mode: fixed, temperature: 20 }
+      - { time: "22:30", mode: off }
 ```
 
-Block modes:
-
-| mode | fields | meaning |
-|---|---|---|
-| `follow` | optional `offset` | master target + offset (block offset overrides the room's offset) |
-| `fixed` | `temperature` | this temperature, whatever the master says |
-| `off` | — | thermostat off |
-
 `cozy_home.get_schedule` returns the schedule and the block currently in effect;
-`cozy_home.clear_schedule` removes it. The `sensor.<room>_schedule` entity always carries the
-current schedule in its `schedule` attribute (that's what the card reads).
+`cozy_home.clear_schedule` removes it. `sensor.<hub>_schedule` reads out what the schedule is
+doing ("Fixed 20° until 22:00", or "Not scheduled here" when the thermostat runs its own).
 
-### Scheduling the master itself
+### Advanced: a schedule for one room
 
-Pick the **hub device** (the one named after your integration) instead of a room, and use only
-`fixed` / `off` blocks. Home Assistant then drives the master thermostat from that schedule
-and the rooms follow. When a master block applies, the master is put into manual **heat**
-mode so the thermostat's own schedule (e.g. Hive's) doesn't override it — disable the Hive
-schedule if you go this route, otherwise the two will take turns.
+Normally rooms don't need one — the offset does the job. If a room really needs its own
+timeline (a nursery held at a fixed temperature overnight, say), enable that room's disabled
+`sensor.<room>_schedule` entity and edit it with the card's `entity:` option
+(`type: custom:cozy-home-schedule-card`, `entity: sensor.nursery_schedule`), or with
+`cozy_home.set_schedule` on the room device. Room blocks can be `follow` (the heating schedule
++ offset, optionally with a block-specific `offset`), `fixed`, or `off`; such a schedule takes
+precedence over following the master for that room.
 
 ## Actions (services)
 
