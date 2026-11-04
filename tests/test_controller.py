@@ -8,6 +8,7 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
@@ -17,7 +18,15 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.cozy_home.const import DOMAIN
 
-from .conftest import BEDROOM, MASTER, room_device_id, set_master, set_trv, setup_integration
+from .conftest import (
+    BEDROOM,
+    MASTER,
+    OFFICE,
+    room_device_id,
+    set_master,
+    set_trv,
+    setup_integration,
+)
 
 
 def _temps(calls: dict[str, list], entity_id: str = BEDROOM) -> list[float]:
@@ -856,3 +865,144 @@ async def test_old_single_thermostat_room_still_loads(hass: HomeAssistant, clima
     await setup_integration(hass, entry)
     assert _temps(climate_calls) == [18.0]
     assert entry.runtime_data.room("bedroom_sub").climate_entities == [BEDROOM]
+
+
+async def test_legacy_single_thermostat_rooms_merge_by_area(
+    hass: HomeAssistant, climate_calls
+) -> None:
+    """Rooms from 0.3 and earlier (one thermostat each) are grouped by HA area on upgrade."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry as _Entry
+
+    from custom_components.cozy_home.const import (
+        CONF_CLIMATE_ENTITIES,
+        CONF_CLIMATE_ENTITY,
+        CONF_MASTER_ENTITY,
+        CONF_NAME,
+        CONF_OFF_BELOW,
+        CONF_OFFSET,
+        CONF_ROOM_NAME,
+        SUBENTRY_TYPE_ROOM,
+    )
+
+    ent_reg = er.async_get(hass)
+    area_reg = ar.async_get(hass)
+    upstairs = area_reg.async_get_or_create("Upstairs")
+    for object_id in ("up_dining", "up_middle", "up_garage"):
+        reg = ent_reg.async_get_or_create(
+            "climate", "test", object_id, suggested_object_id=object_id
+        )
+        ent_reg.async_update_entity(reg.entity_id, area_id=upstairs.id)
+    for e in ("climate.up_dining", "climate.up_middle", "climate.up_garage", "climate.hall"):
+        set_trv(hass, e, temperature=15)
+    set_master(hass, temperature=20)
+
+    def legacy_room(sid: str, title: str, climate: str, offset: float) -> dict:
+        return {
+            "data": {
+                CONF_ROOM_NAME: title,
+                CONF_CLIMATE_ENTITY: climate,
+                CONF_OFFSET: offset,
+                CONF_OFF_BELOW: 10.0,
+            },
+            "subentry_type": SUBENTRY_TYPE_ROOM,
+            "title": title,
+            "unique_id": climate,
+            "subentry_id": sid,
+        }
+
+    entry = _Entry(
+        domain=DOMAIN,
+        title="Heating",
+        unique_id=MASTER,
+        data={CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"},
+        subentries_data=[
+            legacy_room("s_middle", "Upstairs Middle", "climate.up_middle", -1.0),
+            legacy_room("s_up", "Upstairs", "climate.up_dining", 1.0),
+            legacy_room("s_garage", "Upstairs Garage", "climate.up_garage", 0.0),
+            legacy_room("s_hall", "Hall", "climate.hall", -2.0),  # no area: untouched
+        ],
+    )
+    entry.add_to_hass(hass)
+    # The room devices already exist from the old version
+    dev_reg = dr.async_get(hass)
+    for sid in ("s_middle", "s_up", "s_garage", "s_hall"):
+        dev_reg.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            config_subentry_id=sid,
+            identifiers={(DOMAIN, sid)},
+        )
+    await setup_integration(hass, entry)
+
+    # Three "Upstairs" rooms became one, keeping the room named after the area
+    assert set(entry.subentries) == {"s_up", "s_hall"}
+    merged = entry.subentries["s_up"]
+    assert merged.title == "Upstairs"
+    assert merged.data[CONF_CLIMATE_ENTITIES] == [
+        "climate.up_dining",
+        "climate.up_middle",
+        "climate.up_garage",
+    ]
+    assert CONF_CLIMATE_ENTITY not in merged.data
+    assert merged.unique_id is None
+    assert entry.subentries["s_hall"].data[CONF_CLIMATE_ENTITIES] == ["climate.hall"]
+
+    # All three radiators follow with the surviving room's offset (+1 -> 21)
+    for e in ("climate.up_dining", "climate.up_middle", "climate.up_garage"):
+        assert _temps(climate_calls, e) == [21.0]
+    assert _temps(climate_calls, "climate.hall") == [18.0]
+
+    # The merged room's device now sits in the Upstairs area; the others are gone
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, "s_up")}).area_id == upstairs.id
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, "s_middle")}) is None
+    assert hass.states.get("sensor.upstairs_target_temperature").attributes["thermostats"] == [
+        "climate.up_dining",
+        "climate.up_middle",
+        "climate.up_garage",
+    ]
+
+
+async def test_new_room_device_is_suggested_into_its_area(
+    hass: HomeAssistant, climate_calls
+) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry as _Entry
+
+    from custom_components.cozy_home.const import (
+        CONF_CLIMATE_ENTITIES,
+        CONF_MASTER_ENTITY,
+        CONF_NAME,
+        CONF_OFF_BELOW,
+        CONF_OFFSET,
+        CONF_ROOM_NAME,
+        SUBENTRY_TYPE_ROOM,
+    )
+
+    ent_reg = er.async_get(hass)
+    study = ar.async_get(hass).async_get_or_create("Study")
+    reg = ent_reg.async_get_or_create("climate", "test", "office", suggested_object_id="office_trv")
+    ent_reg.async_update_entity(reg.entity_id, area_id=study.id)
+    set_trv(hass, OFFICE)
+    set_master(hass)
+    entry = _Entry(
+        domain=DOMAIN,
+        title="Heating",
+        unique_id=MASTER,
+        data={CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"},
+        subentries_data=[
+            {
+                "data": {
+                    CONF_ROOM_NAME: "Study",
+                    CONF_CLIMATE_ENTITIES: [OFFICE],
+                    CONF_OFFSET: 0.0,
+                    CONF_OFF_BELOW: 10.0,
+                },
+                "subentry_type": SUBENTRY_TYPE_ROOM,
+                "title": "Study",
+                "unique_id": None,
+                "subentry_id": "study_sub",
+            }
+        ],
+    )
+    entry.add_to_hass(hass)
+    await setup_integration(hass, entry)
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "study_sub")})
+    assert device is not None and device.area_id == study.id

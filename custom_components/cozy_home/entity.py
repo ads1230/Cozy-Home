@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
 from .controller import HeatingController, RoomState
+from .migration import shared_area
 
 
 class CozyHomeEntity(Entity):
@@ -56,6 +58,17 @@ class CozyHomeRoomEntity(CozyHomeEntity):
             model="Room",
             via_device=(DOMAIN, entry.entry_id),
         )
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """The room device, suggested into the area its thermostats share."""
+        info = self._attr_device_info
+        if info is None or self.hass is None or self._subentry_id not in self._controller.rooms:
+            return info
+        area = shared_area(self.hass, self.room.climate_entities)
+        if area and (area_entry := ar.async_get(self.hass).async_get_area(area)):
+            return DeviceInfo(**info, suggested_area=area_entry.name)
+        return info
 
     @property
     def room(self) -> RoomState:

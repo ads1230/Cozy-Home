@@ -19,6 +19,7 @@ from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .controller import HeatingController
+from .migration import async_merge_legacy_rooms
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
 async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> bool:
     """Set up one master thermostat and its rooms."""
+    # Rooms from 0.3 and earlier (one thermostat each) are grouped by area.
+    async_merge_legacy_rooms(hass, entry)
+
     controller = HeatingController(hass, entry)
     await controller.async_setup()
     entry.runtime_data = controller

@@ -42,7 +42,11 @@ Then **Settings → Devices & services → Add integration → Cozy Home**.
 
 Add thermostats later with **Add rooms** on the integration page (same steps, only for
 thermostats not yet in a room). Rename a room, or change which thermostats it has, via its
-⋮ → *Reconfigure*.
+⋮ → *Reconfigure*. A room's device is placed in the Home Assistant area its thermostats share.
+
+Upgrading from 0.3 or earlier (one room per thermostat): on first start, rooms whose
+thermostats are in the same area are merged into one room — the one named after the area keeps
+its settings and schedule, the others are removed (a warning in the log says which).
 
 Each room becomes a device with its own controls:
 
