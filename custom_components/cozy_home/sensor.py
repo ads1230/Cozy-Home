@@ -124,6 +124,8 @@ class RoomTargetSensor(CozyHomeRoomEntity, SensorEntity):
         return {
             "mode": room.status,
             "reason": room.reason,
+            "thermostats": list(room.climate_entities),
+            "applied": dict(room.applied),
             "master_target": room.master_target,
             "offset": room.offset,
             "off_below": room.off_below,

@@ -22,21 +22,35 @@
         }
       },
       "rooms": {
-        "title": "Choose the rooms",
-        "description": "Home Assistant knows {count} other thermostat(s). Tick the ones that should follow the master — each becomes a room, named after its area (or its own name). Untick anything that isn't a room radiator. You can rename rooms and fine-tune each one afterwards.",
+        "title": "Choose the thermostats",
+        "description": "Home Assistant knows {count} other thermostat(s). Tick the ones that should follow the master. They are then grouped into rooms by area, and you set up each room in turn — several radiators in one room share one offset and schedule.",
         "data": {
-          "rooms": "Thermostats to add as rooms",
-          "offset": "Offset for all of them",
+          "rooms": "Thermostats to add"
+        }
+      },
+      "room": {
+        "title": "Room: {room}",
+        "description": "Suggested from the area: {thermostats}. Untick a thermostat to leave it for a room of its own; {remaining} thermostat(s) still to place.",
+        "data": {
+          "name": "Room name",
+          "climate_entities": "Thermostats in this room",
+          "offset": "Offset",
           "off_below": "Turn off below"
         },
         "data_description": {
-          "offset": "Degrees added to the master target; can be changed per room later.",
-          "off_below": "If a room's target would be below this temperature its thermostat is switched off (or set to frost protection)."
+          "climate_entities": "All of them get the room's offset, cut-off and schedule.",
+          "offset": "Degrees added to the master target (-2 with a master of 20° gives 18°). Can be changed later with the room's entities.",
+          "off_below": "If the room's target would be below this temperature its thermostats are switched off (or set to frost protection)."
         }
       }
     },
     "abort": {
       "already_configured": "That thermostat is already set up as a master."
+    },
+    "error": {
+      "no_thermostats": "Pick at least one thermostat for this room.",
+      "name_required": "Give the room a name.",
+      "name_taken": "There is already a room with that name."
     }
   },
   "config_subentries": {
@@ -50,36 +64,45 @@
       "step": {
         "user": {
           "title": "Add rooms",
-          "description": "{count} thermostat(s) aren't rooms yet. Tick the ones to add; each becomes a room named after its area (or its own name). Offset and cut-off apply to all of them and can be changed per room afterwards.",
+          "description": "{count} thermostat(s) aren't in a room yet. Tick the ones to add; they are grouped into rooms by area and you set up each room in turn.",
           "data": {
-            "rooms": "Thermostats to add as rooms",
-            "offset": "Offset for all of them",
-            "off_below": "Turn off below"
-          },
-          "data_description": {
-            "offset": "Degrees added to the master target (-2 with a master of 20° gives 18°).",
-            "off_below": "If a room's target would be below this temperature its thermostat is switched off (or set to its frost-protection temperature). More behaviour options are on each room's device page."
+            "rooms": "Thermostats to add"
           }
         },
         "reconfigure": {
           "title": "Reconfigure room",
-          "description": "Offset and cut-off set here are only used the first time a room is added; afterwards adjust them with the room's own entities.",
+          "description": "Offset and cut-off set here are only used the first time; afterwards adjust them with the room's entities.",
           "data": {
             "name": "Room name",
-            "climate_entity": "Room thermostat",
+            "climate_entities": "Thermostats in this room",
             "offset": "Offset",
             "off_below": "Turn off below"
+          }
+        },
+        "room": {
+          "title": "Room: {room}",
+          "description": "Suggested from the area: {thermostats}. Untick a thermostat to leave it for a room of its own; {remaining} thermostat(s) still to place.",
+          "data": {
+            "name": "Room name",
+            "climate_entities": "Thermostats in this room",
+            "offset": "Offset",
+            "off_below": "Turn off below"
+          },
+          "data_description": {
+            "climate_entities": "All of them get the room's offset, cut-off and schedule.",
+            "offset": "Degrees added to the master target (-2 with a master of 20° gives 18°). Can be changed later with the room's entities.",
+            "off_below": "If the room's target would be below this temperature its thermostats are switched off (or set to frost protection)."
           }
         }
       },
       "error": {
-        "same_as_master": "That is the master thermostat. Pick a room thermostat instead.",
-        "already_configured": "That thermostat already belongs to another room.",
-        "no_rooms": "Tick at least one thermostat."
+        "no_rooms": "Tick at least one thermostat.",
+        "no_thermostats": "Pick at least one thermostat for this room.",
+        "name_required": "Give the room a name.",
+        "name_taken": "There is already a room with that name."
       },
       "abort": {
-        "already_configured": "That thermostat already belongs to another room.",
-        "no_candidates": "Every thermostat Home Assistant knows about is already a room (or the master)."
+        "no_candidates": "Every thermostat Home Assistant knows about is already in a room (or is the master)."
       }
     }
   },

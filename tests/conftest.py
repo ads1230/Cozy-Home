@@ -12,7 +12,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.cozy_home.const import (
-    CONF_CLIMATE_ENTITY,
+    CONF_CLIMATE_ENTITIES,
     CONF_MASTER_ENTITY,
     CONF_NAME,
     CONF_OFF_BELOW,
@@ -91,13 +91,13 @@ def config_entry(hass: HomeAssistant) -> MockConfigEntry:
             {
                 "data": {
                     CONF_ROOM_NAME: "Bedroom",
-                    CONF_CLIMATE_ENTITY: BEDROOM,
+                    CONF_CLIMATE_ENTITIES: [BEDROOM],
                     CONF_OFFSET: -2.0,
                     CONF_OFF_BELOW: 10.0,
                 },
                 "subentry_type": SUBENTRY_TYPE_ROOM,
                 "title": "Bedroom",
-                "unique_id": BEDROOM,
+                "unique_id": None,
                 "subentry_id": "bedroom_sub",
             }
         ],

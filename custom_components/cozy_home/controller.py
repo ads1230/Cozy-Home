@@ -58,7 +58,6 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_CLIMATE_ENTITY,
     CONF_ENABLED,
     CONF_FROST_TEMPERATURE,
     CONF_MASTER_ENTITY,
@@ -98,6 +97,7 @@ from .const import (
     STORAGE_VERSION,
     SUBENTRY_TYPE_ROOM,
 )
+from .helpers import room_entities
 from .schedule import Block, Schedule, active_block, normalize
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class RoomState:
 
     subentry_id: str
     name: str
-    climate_entity: str
+    climate_entities: list[str]
     offset: float
     off_below: float
     master_off: str = DEFAULT_MASTER_OFF
@@ -138,6 +138,7 @@ class RoomState:
     active_block: Block | None = None
     last_command: Command | None = None
     last_synced: datetime | None = None
+    applied: dict[str, float | str] = field(default_factory=dict)  # per thermostat
 
 
 def _is_bad(state: State | None) -> bool:
@@ -196,7 +197,7 @@ class HeatingController:
             self.rooms[subentry_id] = RoomState(
                 subentry_id=subentry_id,
                 name=subentry.title,
-                climate_entity=subentry.data[CONF_CLIMATE_ENTITY],
+                climate_entities=room_entities(subentry.data),
                 offset=float(saved.get("offset", subentry.data.get(CONF_OFFSET, DEFAULT_OFFSET))),
                 off_below=float(
                     saved.get("off_below", subentry.data.get(CONF_OFF_BELOW, DEFAULT_OFF_BELOW))
@@ -227,7 +228,10 @@ class HeatingController:
             # Rooms that were removed: drop their stored settings.
             self._mark_dirty()
 
-        tracked = [self.master_entity, *(r.climate_entity for r in self.rooms.values())]
+        tracked = [
+            self.master_entity,
+            *(e for room in self.rooms.values() for e in room.climate_entities),
+        ]
         self._unsubs.append(
             async_track_state_change_event(self.hass, tracked, self._async_state_changed)
         )
@@ -376,7 +380,7 @@ class HeatingController:
         if old_bad == new_bad:
             return
         for room in self.rooms.values():
-            if room.climate_entity == entity_id:
+            if entity_id in room.climate_entities:
                 await self.async_sync_room(room.subentry_id, force=not new_bad)
 
     async def _async_minute_tick(self, now: datetime) -> None:
@@ -434,11 +438,15 @@ class HeatingController:
             room.status, room.reason = STATUS_DISABLED, REASON_ROOM_DISABLED
             return None
 
-        room_state = self.hass.states.get(room.climate_entity)
-        if _is_bad(room_state):
+        # The first available thermostat defines the range shown as the room's
+        # target; every thermostat is clamped to its own range when applied.
+        room_state = next(
+            (state for e in room.climate_entities if not _is_bad(state := self.hass.states.get(e))),
+            None,
+        )
+        if room_state is None:
             room.status, room.reason = STATUS_UNAVAILABLE, REASON_ROOM_UNAVAILABLE
             return None
-        assert room_state is not None
 
         found = active_block(room.schedule, dt_util.now())
         if found is not None:
@@ -479,9 +487,9 @@ class HeatingController:
         if target < room.off_below:
             return self._off(room, room_state, REASON_BELOW_THRESHOLD)
 
-        target = self._clamp(room_state, target)
-        room.status, room.reason, room.target = status, None, target
-        return Command(hvac_off=False, temperature=target)
+        room.status, room.reason = status, None
+        room.target = self._clamp(room_state, target)
+        return Command(hvac_off=False, temperature=round(target, 2))
 
     def _off(self, room: RoomState, room_state: State, reason: str) -> Command:
         """The command for "this room should be off", honouring the room's off mode.
@@ -496,7 +504,7 @@ class HeatingController:
         if room.off_mode == OFF_MODE_FROST:
             room.status = STATUS_FROST
             room.target = self._clamp(room_state, room.frost_temperature)
-            return Command(hvac_off=False, temperature=room.target)
+            return Command(hvac_off=False, temperature=room.frost_temperature)
         room.status = STATUS_OFF
         return Command(hvac_off=True)
 
@@ -523,8 +531,22 @@ class HeatingController:
         return None
 
     async def _async_apply(self, room: RoomState, command: Command) -> None:
-        """Push a command to the room thermostat (skips calls already satisfied)."""
-        await self._async_apply_to(room.climate_entity, command, label=room.name)
+        """Push a command to every thermostat in the room (skipping ones already there)."""
+        for entity_id in room.climate_entities:
+            state = self.hass.states.get(entity_id)
+            if _is_bad(state):
+                room.applied[entity_id] = STATE_UNAVAILABLE
+                continue
+            assert state is not None
+            per_thermostat = command
+            if command.temperature is not None:
+                per_thermostat = Command(
+                    hvac_off=False, temperature=self._clamp(state, command.temperature)
+                )
+            room.applied[entity_id] = (
+                "off" if per_thermostat.hvac_off else per_thermostat.temperature or 0.0
+            )
+            await self._async_apply_to(entity_id, per_thermostat, label=room.name)
 
     async def _async_apply_to(
         self, entity_id: str, command: Command, *, label: str, force_manual: bool = False

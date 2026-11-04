@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.cozy_home.const import (
-    CONF_CLIMATE_ENTITY,
+    CONF_CLIMATE_ENTITIES,
     CONF_MASTER_ENTITY,
     CONF_NAME,
     CONF_OFF_BELOW,
@@ -31,68 +31,125 @@ from .conftest import BEDROOM, MASTER, OFFICE, TRV_ATTRS, set_master, set_trv, s
 
 
 async def test_user_flow_creates_hub_with_rooms(hass: HomeAssistant, climate_calls) -> None:
-    """Master first, then a multi-select of every other thermostat (all pre-ticked)."""
+    """Master, tick thermostats, then one form per room grouped by area."""
     set_master(hass)
-    set_trv(hass, BEDROOM, friendly_name="Bedroom TRV")
-    hass.states.async_set("climate.hallway_trv", "heat", {"friendly_name": "Hallway TRV"})
-    # The office TRV is registered and sits in an area -> its room is named after the area
-    area = ar.async_get(hass).async_get_or_create("Study")
     ent_reg = er.async_get(hass)
-    registered = ent_reg.async_get_or_create(
-        "climate", "test", "office", suggested_object_id="office_trv"
-    )
-    assert registered.entity_id == OFFICE
-    ent_reg.async_update_entity(OFFICE, area_id=area.id)
-    set_trv(hass, OFFICE)
+    area_reg = ar.async_get(hass)
+    upstairs = area_reg.async_get_or_create("Upstairs")
+    study = area_reg.async_get_or_create("Study")
+    # Two radiators in "Upstairs", one heater in "Study", one TRV with no area
+    for object_id, area in (("up_left", upstairs), ("up_right", upstairs), ("office_trv", study)):
+        reg = ent_reg.async_get_or_create(
+            "climate", "test", object_id, suggested_object_id=object_id
+        )
+        ent_reg.async_update_entity(reg.entity_id, area_id=area.id)
+    set_trv(hass, "climate.up_left", friendly_name="Upstairs Left Radiator")
+    set_trv(hass, "climate.up_right", friendly_name="Upstairs Right Radiator")
+    set_trv(hass, OFFICE, friendly_name="Heater")
+    set_trv(hass, BEDROOM, friendly_name="Bedroom TRV")
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
-
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"}
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "rooms"
-    assert result["description_placeholders"] == {"count": "3"}
-    # Everything but the master is offered, pre-ticked
-    defaults = result["data_schema"]({})
-    assert sorted(defaults[CONF_ROOMS]) == sorted([BEDROOM, OFFICE, "climate.hallway_trv"])
+    assert result["description_placeholders"] == {"count": "4"}
+    assert sorted(result["data_schema"]({})[CONF_ROOMS]) == sorted(
+        [BEDROOM, OFFICE, "climate.up_left", "climate.up_right"]
+    )
 
+    # Tick everything except the office
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ROOMS: [BEDROOM, "climate.up_left", "climate.up_right"]}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "room"
+    # First room proposed: the bedroom (sorted by name), on its own
+    defaults = result["data_schema"]({})
+    assert defaults[CONF_ROOM_NAME] == "Bedroom"
+    assert defaults[CONF_CLIMATE_ENTITIES] == [BEDROOM]
+    assert result["description_placeholders"]["remaining"] == "3"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_ROOMS: [BEDROOM, OFFICE], CONF_OFFSET: -1.0, CONF_OFF_BELOW: 12.0},
+        {CONF_ROOM_NAME: "Bedroom", CONF_CLIMATE_ENTITIES: [BEDROOM], CONF_OFFSET: -2.0},
+    )
+
+    # Second room proposed: both Upstairs radiators together, named after the area
+    assert result["step_id"] == "room"
+    defaults = result["data_schema"]({})
+    assert defaults[CONF_ROOM_NAME] == "Upstairs"
+    assert sorted(defaults[CONF_CLIMATE_ENTITIES]) == ["climate.up_left", "climate.up_right"]
+    assert "Upstairs Left Radiator" in result["description_placeholders"]["thermostats"]
+    # A duplicate name is rejected
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ROOM_NAME: "Bedroom", CONF_CLIMATE_ENTITIES: ["climate.up_left", "climate.up_right"]},
+    )
+    assert result["errors"] == {CONF_ROOM_NAME: "name_taken"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_ROOM_NAME: "Landing",
+            CONF_CLIMATE_ENTITIES: ["climate.up_left", "climate.up_right"],
+            CONF_OFFSET: 1.0,
+            CONF_OFF_BELOW: 12.0,
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Heating"
-    assert result["data"] == {CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"}
     entry = result["result"]
-    assert entry.unique_id == MASTER
-    rooms = {s.unique_id: s for s in entry.subentries.values()}
-    assert set(rooms) == {BEDROOM, OFFICE}
-    assert rooms[OFFICE].title == "Study"  # named after its area
-    assert rooms[BEDROOM].title == "Bedroom"  # "Bedroom TRV" with the noise word stripped
-    assert rooms[BEDROOM].data[CONF_OFFSET] == -1.0
-    assert rooms[BEDROOM].data[CONF_OFF_BELOW] == 12.0
+    rooms = {s.title: s for s in entry.subentries.values()}
+    assert set(rooms) == {"Bedroom", "Landing"}
+    assert rooms["Landing"].data[CONF_CLIMATE_ENTITIES] == ["climate.up_left", "climate.up_right"]
+    assert rooms["Landing"].data[CONF_OFFSET] == 1.0
+    assert rooms["Bedroom"].data[CONF_OFFSET] == -2.0
     await hass.async_block_till_done()
-    assert hass.states.get("number.bedroom_offset").state == "-1.0"
-    assert hass.states.get("number.study_offset").state == "-1.0"
+    assert hass.states.get("number.landing_offset").state == "1.0"
+    assert hass.states.get("number.bedroom_offset").state == "-2.0"
 
 
-async def test_user_flow_with_no_rooms(hass: HomeAssistant, climate_calls) -> None:
+async def test_room_step_can_split_a_group(hass: HomeAssistant, climate_calls) -> None:
+    """Unticking a thermostat in a proposed room leaves it for the next room."""
     set_master(hass)
+    ent_reg = er.async_get(hass)
+    area = ar.async_get(hass).async_get_or_create("Upstairs")
+    for object_id in ("up_left", "up_right"):
+        reg = ent_reg.async_get_or_create(
+            "climate", "test", object_id, suggested_object_id=object_id
+        )
+        ent_reg.async_update_entity(reg.entity_id, area_id=area.id)
+    set_trv(hass, "climate.up_left", friendly_name="Upstairs Left Radiator")
+    set_trv(hass, "climate.up_right", friendly_name="Upstairs Right Radiator")
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"}
+        result["flow_id"], {CONF_MASTER_ENTITY: MASTER}
     )
-    assert result["step_id"] == "rooms"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_ROOMS: []})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ROOMS: ["climate.up_left", "climate.up_right"]}
+    )
+    assert sorted(result["data_schema"]({})[CONF_CLIMATE_ENTITIES]) == [
+        "climate.up_left",
+        "climate.up_right",
+    ]
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ROOM_NAME: "Upstairs", CONF_CLIMATE_ENTITIES: ["climate.up_left"]}
+    )
+    assert result["step_id"] == "room"
+    defaults = result["data_schema"]({})
+    assert defaults[CONF_CLIMATE_ENTITIES] == ["climate.up_right"]
+    assert defaults[CONF_ROOM_NAME] == "Upstairs Right"  # area name taken -> cleaned entity name
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ROOM_NAME: "Upstairs Right", CONF_CLIMATE_ENTITIES: ["climate.up_right"]},
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["result"].subentries == {}
+    assert {s.title for s in result["result"].subentries.values()} == {"Upstairs", "Upstairs Right"}
 
 
 async def test_user_flow_aborts_on_duplicate_master(
@@ -134,10 +191,10 @@ async def test_reconfigure_master(
 async def test_add_rooms_subentry(
     hass: HomeAssistant, config_entry: MockConfigEntry, climate_calls
 ) -> None:
-    """Bulk-add from the integration page: unconfigured thermostats only, one reload."""
+    """Add rooms from the integration page: unconfigured thermostats only, one reload."""
     set_master(hass, temperature=20)
     set_trv(hass, BEDROOM)
-    set_trv(hass, OFFICE, temperature=15)
+    set_trv(hass, OFFICE, temperature=15, friendly_name="Office Heater")
     hass.states.async_set(
         "climate.kitchen_trv", "heat", {**TRV_ATTRS, "friendly_name": "Kitchen Radiator"}
     )
@@ -150,14 +207,26 @@ async def test_add_rooms_subentry(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
     # The master and the existing bedroom are not offered
-    assert sorted(result["data_schema"]({})[CONF_ROOMS]) == [
-        climate_kitchen := "climate.kitchen_trv",
-        OFFICE,
-    ]
+    assert sorted(result["data_schema"]({})[CONF_ROOMS]) == ["climate.kitchen_trv", OFFICE]
 
     result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ROOMS: [OFFICE, "climate.kitchen_trv"]}
+    )
+    assert result["step_id"] == "room"
+    assert result["data_schema"]({})[CONF_ROOM_NAME] == "Kitchen"
+    result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
-        {CONF_ROOMS: [OFFICE, climate_kitchen], CONF_OFFSET: 1.0, CONF_OFF_BELOW: 12.0},
+        {
+            CONF_ROOM_NAME: "Kitchen",
+            CONF_CLIMATE_ENTITIES: ["climate.kitchen_trv"],
+            CONF_OFFSET: 0.0,
+        },
+    )
+    assert result["step_id"] == "room"
+    assert result["data_schema"]({})[CONF_ROOM_NAME] == "Office"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_ROOM_NAME: "Office", CONF_CLIMATE_ENTITIES: [OFFICE], CONF_OFFSET: 1.0},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -173,7 +242,7 @@ async def test_add_rooms_subentry(
         for c in climate_calls["set_temperature"]
     )
     assert hass.states.get("number.office_offset").state == "1.0"
-    assert hass.states.get("number.kitchen_offset").state == "1.0"
+    assert hass.states.get("number.kitchen_offset").state == "0.0"
 
 
 async def test_add_rooms_requires_a_selection_and_aborts_when_none_left(
@@ -199,12 +268,16 @@ async def test_add_rooms_requires_a_selection_and_aborts_when_none_left(
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {CONF_ROOMS: [OFFICE]}
     )
+    assert result["step_id"] == "room"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ROOM_NAME: "Office", CONF_CLIMATE_ENTITIES: [OFFICE]}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
     await hass.async_block_till_done()
 
-    # Now every thermostat is a room: the flow aborts straight away
+    # Now every thermostat is in a room: the flow aborts straight away
     result = await hass.config_entries.subentries.async_init(
         (config_entry.entry_id, SUBENTRY_TYPE_ROOM),
         context={"source": config_entries.SOURCE_USER},
@@ -235,7 +308,7 @@ async def test_reconfigure_room(
         result["flow_id"],
         {
             CONF_ROOM_NAME: "Main bedroom",
-            CONF_CLIMATE_ENTITY: OFFICE,
+            CONF_CLIMATE_ENTITIES: [OFFICE, BEDROOM],
             CONF_OFFSET: -2.0,
             CONF_OFF_BELOW: 10.0,
         },
@@ -248,8 +321,8 @@ async def test_reconfigure_room(
 
     subentry = config_entry.subentries[subentry.subentry_id]
     assert subentry.title == "Main bedroom"
-    assert subentry.data[CONF_CLIMATE_ENTITY] == OFFICE
-    assert subentry.unique_id == OFFICE
+    assert subentry.data[CONF_CLIMATE_ENTITIES] == [OFFICE, BEDROOM]
+    assert subentry.unique_id is None
     room = config_entry.runtime_data.room(subentry.subentry_id)
-    assert room.climate_entity == OFFICE
+    assert room.climate_entities == [OFFICE, BEDROOM]
     assert room.name == "Main bedroom"

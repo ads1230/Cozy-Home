@@ -737,3 +737,122 @@ async def test_card_is_served(
     assert resp.status == 200
     body = await resp.text()
     assert "cozy-home-schedule-card" in body
+
+
+async def test_room_with_two_radiators(hass: HomeAssistant, climate_calls) -> None:
+    """Several thermostats in one room share its offset; each is clamped to its own range."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry as _Entry
+
+    from custom_components.cozy_home.const import (
+        CONF_CLIMATE_ENTITIES,
+        CONF_MASTER_ENTITY,
+        CONF_NAME,
+        CONF_OFF_BELOW,
+        CONF_OFFSET,
+        CONF_ROOM_NAME,
+        SUBENTRY_TYPE_ROOM,
+    )
+
+    entry = _Entry(
+        domain=DOMAIN,
+        title="Heating",
+        unique_id=MASTER,
+        data={CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"},
+        subentries_data=[
+            {
+                "data": {
+                    CONF_ROOM_NAME: "Landing",
+                    CONF_CLIMATE_ENTITIES: ["climate.up_left", "climate.up_right"],
+                    CONF_OFFSET: 1.0,
+                    CONF_OFF_BELOW: 10.0,
+                },
+                "subentry_type": SUBENTRY_TYPE_ROOM,
+                "title": "Landing",
+                "unique_id": None,
+                "subentry_id": "landing_sub",
+            }
+        ],
+    )
+    entry.add_to_hass(hass)
+    set_master(hass, temperature=20.3)
+    set_trv(hass, "climate.up_left", temperature=15)  # step 0.5, max 30
+    set_trv(hass, "climate.up_right", temperature=15, target_temp_step=1, max_temp=21)
+    await setup_integration(hass, entry)
+
+    # 21.3 -> 21.5 on the left (0.5 step), 21 on the right (1° step, clamped to max 21)
+    assert _temps(climate_calls, "climate.up_left") == [21.5]
+    assert _temps(climate_calls, "climate.up_right") == [21.0]
+    target = hass.states.get("sensor.landing_target_temperature")
+    assert target.state == "21.5"
+    assert target.attributes["thermostats"] == ["climate.up_left", "climate.up_right"]
+    assert target.attributes["applied"] == {"climate.up_left": 21.5, "climate.up_right": 21.0}
+
+    # One radiator going offline doesn't stop the other being controlled
+    _clear(climate_calls)
+    hass.states.async_set("climate.up_left", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    set_master(hass, temperature=18)
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, "climate.up_right") == [19.0]
+    assert _temps(climate_calls, "climate.up_left") == []
+    assert hass.states.get("sensor.landing_mode").state == "follow"
+    assert (
+        hass.states.get("sensor.landing_target_temperature").attributes["applied"][
+            "climate.up_left"
+        ]
+        == "unavailable"
+    )
+
+    # Back online -> it is brought up to date (forced re-sync of the room)
+    set_trv(hass, "climate.up_left", temperature=15)
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, "climate.up_left") == [19.0]
+
+    # Cut-off switches both off
+    _clear(climate_calls)
+    set_master(hass, temperature=7)
+    await hass.async_block_till_done()
+    assert _modes(climate_calls, "climate.up_left") == ["off"]
+    assert _modes(climate_calls, "climate.up_right") == ["off"]
+
+
+async def test_old_single_thermostat_room_still_loads(hass: HomeAssistant, climate_calls) -> None:
+    """Rooms created before 0.4 stored a single climate_entity."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry as _Entry
+
+    from custom_components.cozy_home.const import (
+        CONF_CLIMATE_ENTITY,
+        CONF_MASTER_ENTITY,
+        CONF_NAME,
+        CONF_OFF_BELOW,
+        CONF_OFFSET,
+        CONF_ROOM_NAME,
+        SUBENTRY_TYPE_ROOM,
+    )
+
+    entry = _Entry(
+        domain=DOMAIN,
+        title="Heating",
+        unique_id=MASTER,
+        data={CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"},
+        subentries_data=[
+            {
+                "data": {
+                    CONF_ROOM_NAME: "Bedroom",
+                    CONF_CLIMATE_ENTITY: BEDROOM,
+                    CONF_OFFSET: -2.0,
+                    CONF_OFF_BELOW: 10.0,
+                },
+                "subentry_type": SUBENTRY_TYPE_ROOM,
+                "title": "Bedroom",
+                "unique_id": BEDROOM,
+                "subentry_id": "bedroom_sub",
+            }
+        ],
+    )
+    entry.add_to_hass(hass)
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=15)
+    await setup_integration(hass, entry)
+    assert _temps(climate_calls) == [18.0]
+    assert entry.runtime_data.room("bedroom_sub").climate_entities == [BEDROOM]

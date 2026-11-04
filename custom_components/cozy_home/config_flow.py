@@ -1,10 +1,13 @@
 """Config flow for the Cozy Home integration.
 
-The config entry holds the master thermostat. Each room is a config
-*subentry*. Rooms are added in bulk: a filterable multi-select of every
-thermostat Home Assistant already knows about, both when the integration is
-first set up and later from "Add rooms" on the integration page. Each room can
-still be reconfigured individually afterwards.
+The config entry holds the master thermostat. Each *room* is a config
+subentry and owns one or more thermostats (several radiators in one room
+share the room's offset, cut-off and schedule).
+
+Adding rooms: tick thermostats in a multi-select, they are grouped by area,
+and the flow then walks through each room — name, which thermostats, its
+offset and cut-off — before anything is created. The same steps run during
+initial setup and later from "Add rooms" on the integration page.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CLIMATE_ENTITIES,
     CONF_CLIMATE_ENTITY,
     CONF_ENABLED,
     CONF_MASTER_ENTITY,
@@ -54,6 +58,7 @@ from .const import (
     OFFSET_STEP,
     SUBENTRY_TYPE_ROOM,
 )
+from .helpers import room_entities
 
 CLIMATE_SELECTOR = selector.EntitySelector(selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN))
 
@@ -90,8 +95,8 @@ def _master_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     )
 
 
-def _rooms_schema(candidates: list[str], exclude: list[str]) -> vol.Schema:
-    """Multi-select of thermostats to add, with offset/cut-off applied to all."""
+def _pick_schema(candidates: list[str], exclude: list[str]) -> vol.Schema:
+    """Step 1 of adding rooms: tick the thermostats."""
     return vol.Schema(
         {
             vol.Optional(CONF_ROOMS, default=candidates): selector.EntitySelector(
@@ -99,28 +104,24 @@ def _rooms_schema(candidates: list[str], exclude: list[str]) -> vol.Schema:
                     domain=CLIMATE_DOMAIN, multiple=True, exclude_entities=exclude
                 )
             ),
-            vol.Optional(CONF_OFFSET, default=DEFAULT_OFFSET): _number(
-                OFFSET_MIN, OFFSET_MAX, OFFSET_STEP
-            ),
-            vol.Optional(CONF_OFF_BELOW, default=DEFAULT_OFF_BELOW): _number(
-                OFF_BELOW_MIN, OFF_BELOW_MAX, OFF_BELOW_STEP
-            ),
         }
     )
 
 
-def _room_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Single-room form, used when reconfiguring a room."""
-    defaults = defaults or {}
+def _room_schema(defaults: dict[str, Any], allowed: list[str]) -> vol.Schema:
+    """One room: name, its thermostats, offset and cut-off."""
     return vol.Schema(
         {
             vol.Required(
                 CONF_ROOM_NAME, default=defaults.get(CONF_ROOM_NAME, vol.UNDEFINED)
             ): selector.TextSelector(),
             vol.Required(
-                CONF_CLIMATE_ENTITY,
-                default=defaults.get(CONF_CLIMATE_ENTITY, vol.UNDEFINED),
-            ): CLIMATE_SELECTOR,
+                CONF_CLIMATE_ENTITIES, default=defaults.get(CONF_CLIMATE_ENTITIES, [])
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=CLIMATE_DOMAIN, multiple=True, include_entities=allowed
+                )
+            ),
             vol.Optional(CONF_OFFSET, default=defaults.get(CONF_OFFSET, DEFAULT_OFFSET)): _number(
                 OFFSET_MIN, OFFSET_MAX, OFFSET_STEP
             ),
@@ -140,21 +141,34 @@ def _climate_entities(hass: HomeAssistant, exclude: set[str]) -> list[str]:
 
 
 @callback
-def room_name_for(hass: HomeAssistant, entity_id: str, taken: set[str]) -> str:
-    """A sensible room name: the entity's area if it has one, else its name."""
-    ent_reg = er.async_get(hass)
-    entry = ent_reg.async_get(entity_id)
-    area_id = entry.area_id if entry else None
-    if entry and not area_id and entry.device_id:
-        device = dr.async_get(hass).async_get(entry.device_id)
-        area_id = device.area_id if device else None
-    candidates: list[str] = []
-    if area_id and (area := ar.async_get(hass).async_get_area(area_id)):
-        candidates.append(area.name)
+def _area_id(hass: HomeAssistant, entity_id: str) -> str | None:
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry is None:
+        return None
+    if entry.area_id:
+        return entry.area_id
+    if entry.device_id and (device := dr.async_get(hass).async_get(entry.device_id)):
+        return device.area_id
+    return None
+
+
+@callback
+def _friendly(hass: HomeAssistant, entity_id: str) -> str:
     state = hass.states.get(entity_id)
-    friendly = (state and state.attributes.get("friendly_name")) or entity_id.split(".", 1)[
-        1
-    ].replace("_", " ").title()
+    return (state and state.attributes.get("friendly_name")) or entity_id.split(".", 1)[1].replace(
+        "_", " "
+    ).title()
+
+
+@callback
+def room_name_for(hass: HomeAssistant, entity_id: str, taken: set[str]) -> str:
+    """A sensible room name: the thermostat's area if it has one, else its name."""
+    candidates: list[str] = []
+    if (area_id := _area_id(hass, entity_id)) and (
+        area := ar.async_get(hass).async_get_area(area_id)
+    ):
+        candidates.append(area.name)
+    friendly = _friendly(hass, entity_id)
     cleaned = re.sub(r"\s{2,}", " ", _NOISE.sub("", friendly)).strip(" -–:")
     candidates.extend([cleaned or friendly, friendly])
     for name in candidates:
@@ -168,36 +182,92 @@ def room_name_for(hass: HomeAssistant, entity_id: str, taken: set[str]) -> str:
 
 
 @callback
-def _build_rooms(
-    hass: HomeAssistant,
-    entity_ids: list[str],
-    *,
-    offset: float,
-    off_below: float,
-    taken_names: set[str],
-) -> list[ConfigSubentryData]:
-    rooms: list[ConfigSubentryData] = []
-    taken = set(taken_names)
-    for entity_id in entity_ids:
-        name = room_name_for(hass, entity_id, taken)
-        taken.add(name)
-        rooms.append(
+def _next_group(hass: HomeAssistant, pending: list[str]) -> list[str]:
+    """The next room to propose: all pending thermostats in the first one's area."""
+    first = pending[0]
+    area = _area_id(hass, first)
+    if area is None:
+        return [first]
+    return [e for e in pending if _area_id(hass, e) == area]
+
+
+class _RoomSteps:
+    """The "tick thermostats, then one form per room" steps, shared by both flows."""
+
+    hass: HomeAssistant
+    _pending: list[str]
+    _rooms: list[ConfigSubentryData]
+    _taken: set[str]
+    _excluded: set[str]
+
+    def _start_rooms(self, *, excluded: set[str], taken: set[str]) -> None:
+        self._pending = []
+        self._rooms = []
+        self._taken = set(taken)
+        self._excluded = set(excluded)
+
+    def _candidates(self) -> list[str]:
+        return _climate_entities(self.hass, self._excluded)
+
+    def _set_pending(self, selected: list[str]) -> None:
+        """Queue the ticked thermostats, in name order so rooms come up predictably."""
+        chosen = {e for e in selected if e not in self._excluded}
+        self._pending = sorted(chosen, key=lambda e: _friendly(self.hass, e).lower())
+
+    def _pick_form(self, step_id: str, errors: dict[str, str] | None = None) -> Any:
+        candidates = self._candidates()
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id=step_id,
+            data_schema=_pick_schema(candidates, sorted(self._excluded)),
+            errors=errors,
+            description_placeholders={"count": str(len(candidates))},
+        )
+
+    def _room_form(self, errors: dict[str, str] | None = None) -> Any:
+        group = _next_group(self.hass, self._pending)
+        default_name = room_name_for(self.hass, group[0], self._taken)
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id="room",
+            data_schema=_room_schema(
+                {CONF_ROOM_NAME: default_name, CONF_CLIMATE_ENTITIES: group}, self._pending
+            ),
+            errors=errors,
+            description_placeholders={
+                "room": default_name,
+                "thermostats": ", ".join(_friendly(self.hass, e) for e in group),
+                "remaining": str(len(self._pending)),
+            },
+        )
+
+    def _take_room(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Record one room from its form; returns form errors if any."""
+        chosen = [e for e in user_input.get(CONF_CLIMATE_ENTITIES, []) if e in self._pending]
+        if not chosen:
+            return {CONF_CLIMATE_ENTITIES: "no_thermostats"}
+        name = str(user_input.get(CONF_ROOM_NAME, "")).strip()
+        if not name:
+            return {CONF_ROOM_NAME: "name_required"}
+        if name in self._taken:
+            return {CONF_ROOM_NAME: "name_taken"}
+        self._rooms.append(
             ConfigSubentryData(
                 data={
                     CONF_ROOM_NAME: name,
-                    CONF_CLIMATE_ENTITY: entity_id,
-                    CONF_OFFSET: offset,
-                    CONF_OFF_BELOW: off_below,
+                    CONF_CLIMATE_ENTITIES: chosen,
+                    CONF_OFFSET: user_input.get(CONF_OFFSET, DEFAULT_OFFSET),
+                    CONF_OFF_BELOW: user_input.get(CONF_OFF_BELOW, DEFAULT_OFF_BELOW),
                 },
                 subentry_type=SUBENTRY_TYPE_ROOM,
                 title=name,
-                unique_id=entity_id,
+                unique_id=None,
             )
         )
-    return rooms
+        self._taken.add(name)
+        self._pending = [e for e in self._pending if e not in chosen]
+        return {}
 
 
-class CozyHomeConfigFlow(ConfigFlow, domain=DOMAIN):
+class CozyHomeConfigFlow(_RoomSteps, ConfigFlow, domain=DOMAIN):
     """Handle the config flow for the master thermostat."""
 
     VERSION = 1
@@ -230,31 +300,32 @@ class CozyHomeConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_MASTER_ENTITY: user_input[CONF_MASTER_ENTITY],
                 CONF_NAME: user_input.get(CONF_NAME) or DEFAULT_NAME,
             }
+            self._start_rooms(excluded={self._master[CONF_MASTER_ENTITY]}, taken=set())
             return await self.async_step_rooms()
 
         return self.async_show_form(step_id="user", data_schema=_master_schema())
 
     async def async_step_rooms(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Tick the thermostats that should follow the master."""
-        master = self._master[CONF_MASTER_ENTITY]
-        candidates = _climate_entities(self.hass, {master})
         if user_input is not None:
-            selected = [e for e in user_input.get(CONF_ROOMS, []) if e != master]
-            rooms = _build_rooms(
-                self.hass,
-                selected,
-                offset=user_input.get(CONF_OFFSET, DEFAULT_OFFSET),
-                off_below=user_input.get(CONF_OFF_BELOW, DEFAULT_OFF_BELOW),
-                taken_names=set(),
-            )
-            return self.async_create_entry(
-                title=self._master[CONF_NAME], data=self._master, subentries=rooms
-            )
+            self._set_pending(user_input.get(CONF_ROOMS, []))
+            if not self._pending:
+                return self._create()
+            return await self.async_step_room()
+        return self._pick_form("rooms")
 
-        return self.async_show_form(
-            step_id="rooms",
-            data_schema=_rooms_schema(candidates, [master]),
-            description_placeholders={"count": str(len(candidates))},
+    async def async_step_room(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """One form per room (grouped by area), until no thermostat is left."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = self._take_room(user_input)
+            if not errors and not self._pending:
+                return self._create()
+        return self._room_form(errors)
+
+    def _create(self) -> ConfigFlowResult:
+        return self.async_create_entry(
+            title=self._master[CONF_NAME], data=self._master, subentries=self._rooms
         )
 
     async def async_step_reconfigure(
@@ -322,91 +393,103 @@ class CozyHomeOptionsFlow(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema)
 
 
-class RoomSubentryFlowHandler(ConfigSubentryFlow):
-    """Add rooms in bulk, or reconfigure one room."""
+class RoomSubentryFlowHandler(_RoomSteps, ConfigSubentryFlow):
+    """Add rooms (several at once), or reconfigure one room."""
 
-    def _configured(self) -> dict[str, str]:
-        """Map configured climate entity → subentry id."""
+    def _assigned(self) -> dict[str, str]:
+        """Map every thermostat that belongs to a room → its subentry id."""
         entry = self._get_entry()
         return {
-            subentry.data[CONF_CLIMATE_ENTITY]: subentry_id
+            entity_id: subentry_id
             for subentry_id, subentry in entry.subentries.items()
             if subentry.subentry_type == SUBENTRY_TYPE_ROOM
+            for entity_id in room_entities(subentry.data)
         }
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Add one or more rooms from the thermostats not yet configured."""
+        """Tick the thermostats that aren't in a room yet."""
         entry = self._get_entry()
-        master = entry.data[CONF_MASTER_ENTITY]
-        exclude = {master, *self._configured()}
-        candidates = _climate_entities(self.hass, exclude)
+        if user_input is None:
+            self._start_rooms(
+                excluded={entry.data[CONF_MASTER_ENTITY], *self._assigned()},
+                taken={s.title for s in entry.subentries.values()},
+            )
+            if not self._candidates():
+                return self.async_abort(reason="no_candidates")
+            return self._pick_form("user")
+
+        self._set_pending(user_input.get(CONF_ROOMS, []))
+        if not self._pending:
+            return self._pick_form("user", {CONF_ROOMS: "no_rooms"})
+        return await self.async_step_room()
+
+    async def async_step_room(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """One form per room, then create them all."""
         errors: dict[str, str] = {}
-
         if user_input is not None:
-            selected = [e for e in user_input.get(CONF_ROOMS, []) if e not in exclude]
-            if not selected:
-                errors[CONF_ROOMS] = "no_rooms"
-            else:
-                rooms = _build_rooms(
-                    self.hass,
-                    selected,
-                    offset=user_input.get(CONF_OFFSET, DEFAULT_OFFSET),
-                    off_below=user_input.get(CONF_OFF_BELOW, DEFAULT_OFF_BELOW),
-                    taken_names={s.title for s in entry.subentries.values()},
-                )
-                # A subentry flow can only *return* one new subentry; the
-                # others are added directly. (The update listener's reload is
-                # debounced, so this doesn't reload once per room.)
-                for room in rooms[:-1]:
-                    self.hass.config_entries.async_add_subentry(
-                        entry,
-                        ConfigSubentry(
-                            data=MappingProxyType(dict(room["data"])),
-                            subentry_type=SUBENTRY_TYPE_ROOM,
-                            title=room["title"],
-                            unique_id=room["unique_id"],
-                        ),
-                    )
-                last = rooms[-1]
-                return self.async_create_entry(
-                    title=last["title"], data=last["data"], unique_id=last["unique_id"]
-                )
+            errors = self._take_room(user_input)
+            if not errors and not self._pending:
+                return self._create()
+        return self._room_form(errors)
 
-        if not candidates and user_input is None:
-            return self.async_abort(reason="no_candidates")
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=_rooms_schema(candidates, sorted(exclude)),
-            errors=errors,
-            description_placeholders={"count": str(len(candidates))},
-        )
+    def _create(self) -> SubentryFlowResult:
+        entry = self._get_entry()
+        # A subentry flow can only *return* one new subentry; the others are
+        # added directly. (The update listener's reload is debounced, so this
+        # doesn't reload once per room.)
+        for room in self._rooms[:-1]:
+            self.hass.config_entries.async_add_subentry(
+                entry,
+                ConfigSubentry(
+                    data=MappingProxyType(dict(room["data"])),
+                    subentry_type=SUBENTRY_TYPE_ROOM,
+                    title=room["title"],
+                    unique_id=None,
+                ),
+            )
+        last = self._rooms[-1]
+        return self.async_create_entry(title=last["title"], data=last["data"])
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Reconfigure a room (name, thermostat, initial offset/cut-off)."""
+        """Reconfigure a room: name, thermostats, initial offset/cut-off."""
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
+        mine = room_entities(subentry.data)
+        assigned = self._assigned()
+        others = {e for e, sid in assigned.items() if sid != subentry.subentry_id}
+        allowed = _climate_entities(self.hass, {entry.data[CONF_MASTER_ENTITY], *others})
+        allowed = sorted(set(allowed) | set(mine))
         errors: dict[str, str] = {}
+
         if user_input is not None:
-            climate = user_input[CONF_CLIMATE_ENTITY]
-            configured = self._configured()
-            if climate == entry.data[CONF_MASTER_ENTITY]:
-                errors[CONF_CLIMATE_ENTITY] = "same_as_master"
-            elif configured.get(climate, subentry.subentry_id) != subentry.subentry_id:
-                errors[CONF_CLIMATE_ENTITY] = "already_configured"
+            chosen = [e for e in user_input.get(CONF_CLIMATE_ENTITIES, []) if e in allowed]
+            name = str(user_input.get(CONF_ROOM_NAME, "")).strip()
+            taken = {s.title for sid, s in entry.subentries.items() if sid != subentry.subentry_id}
+            if not chosen:
+                errors[CONF_CLIMATE_ENTITIES] = "no_thermostats"
+            elif not name:
+                errors[CONF_ROOM_NAME] = "name_required"
+            elif name in taken:
+                errors[CONF_ROOM_NAME] = "name_taken"
             else:
+                data = {k: v for k, v in subentry.data.items() if k != CONF_CLIMATE_ENTITY}
+                data.update(
+                    {
+                        CONF_ROOM_NAME: name,
+                        CONF_CLIMATE_ENTITIES: chosen,
+                        CONF_OFFSET: user_input.get(CONF_OFFSET, DEFAULT_OFFSET),
+                        CONF_OFF_BELOW: user_input.get(CONF_OFF_BELOW, DEFAULT_OFF_BELOW),
+                    }
+                )
                 return self.async_update_and_abort(
-                    entry,
-                    subentry,
-                    title=user_input[CONF_ROOM_NAME],
-                    unique_id=climate,
-                    data_updates=user_input,
+                    entry, subentry, title=name, unique_id=None, data=data
                 )
 
+        defaults = user_input or {**dict(subentry.data), CONF_CLIMATE_ENTITIES: mine}
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_room_schema(user_input or dict(subentry.data)),
+            data_schema=_room_schema(defaults, allowed),
             errors=errors,
         )

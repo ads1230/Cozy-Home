@@ -30,12 +30,17 @@ Then **Settings → Devices & services → Add integration → Cozy Home**.
 
 1. **Choose the master thermostat** — the `climate.*` entity that calls for heat (e.g. your
    Hive thermostat).
-2. **Tick the rooms.** The next step lists every other thermostat Home Assistant already knows
-   about (TRVs, smart radiator valves…), all pre-ticked — untick anything that isn't a room
-   radiator and set a default offset / cut-off for the lot. Each one becomes a room named after
-   its **area** (or its own name with words like "TRV"/"thermostat" stripped).
-3. Add thermostats later with **Add rooms** on the integration page (same multi-select, only
-   the ones that aren't rooms yet), and rename or re-point a room via its ⋮ → *Reconfigure*.
+2. **Tick the thermostats** that should follow it. The list is every other thermostat Home
+   Assistant knows about (TRVs, smart radiator valves, heaters…), all pre-ticked.
+3. **Set up each room.** The ticked thermostats are grouped by **area**, and you get one short
+   form per room: its name (suggested from the area, or the thermostat's name), which
+   thermostats belong to it, and its own offset and cut-off. Several radiators in one room share
+   that offset, cut-off and schedule. Untick a thermostat if it should be a room of its own — it
+   comes back in the next form.
+
+Add thermostats later with **Add rooms** on the integration page (same steps, only for
+thermostats not yet in a room). Rename a room, or change which thermostats it has, via its
+⋮ → *Reconfigure*.
 
 Each room becomes a device with its own controls:
 
@@ -47,7 +52,7 @@ Each room becomes a device with its own controls:
 | `select.<room>_off_mode` | How "off" is done: **Thermostat off** (hvac `off`) or **Frost protection** (keep heating at the frost temperature) |
 | `number.<room>_frost_protection_temperature` | The frost-protection target (default 7.5°) |
 | `select.<room>_when_master_is_off` | **Turn off** the room too (default), or **Hold last target** — leave the TRV as it is until the master comes back |
-| `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, active schedule block) |
+| `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, the room's thermostats and what each was set to, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
 | `sensor.<room>_schedule` | The block in effect now; attribute `schedule` holds the whole week (read by the card) |
 
@@ -71,7 +76,7 @@ Evaluated whenever the master changes, a room setting changes, a schedule block 
 room thermostat comes back online:
 
 1. Integration disabled, or room's *Follow master* off → **don't touch** the thermostat.
-2. Room thermostat unavailable → wait.
+2. Every thermostat in the room unavailable → wait (if only some are, the rest are still driven).
 3. Look up the room's **schedule block** currently in effect (if any):
    * `off` → room **off** (see below)
    * `fixed` → target = block temperature (master ignored)
@@ -79,8 +84,8 @@ room thermostat comes back online:
    * master is **off** → room **off**, or **hold** (nothing sent) if *When master is off* = Hold;
      master unavailable → wait
 4. If target < *Turn off below* → room **off**.
-5. Otherwise round to the thermostat's step, clamp to its min/max, switch it to **heat** if it
-   was off, and set the temperature.
+5. Otherwise, for each thermostat in the room: round to its step, clamp to its min/max, switch
+   it to **heat** if it was off, and set the temperature.
 
 **"Off" means one of two things**, per room (*Off mode*):
 

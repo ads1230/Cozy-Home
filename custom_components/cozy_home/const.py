@@ -13,7 +13,8 @@ CONF_NAME: Final = "name"
 # Room subentry keys
 SUBENTRY_TYPE_ROOM: Final = "room"
 CONF_ROOM_NAME: Final = "name"
-CONF_CLIMATE_ENTITY: Final = "climate_entity"
+CONF_CLIMATE_ENTITIES: Final = "climate_entities"  # a room can have several thermostats
+CONF_CLIMATE_ENTITY: Final = "climate_entity"  # pre-0.4 single-thermostat rooms
 CONF_OFFSET: Final = "offset"
 CONF_OFF_BELOW: Final = "off_below"
 CONF_MASTER_OFF: Final = "master_off"
