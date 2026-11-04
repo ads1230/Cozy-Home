@@ -22,6 +22,7 @@ from homeassistant.config_entries import (
     ConfigSubentry,
     ConfigSubentryData,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -32,15 +33,18 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_CLIMATE_ENTITY,
+    CONF_ENABLED,
     CONF_MASTER_ENTITY,
     CONF_NAME,
     CONF_OFF_BELOW,
     CONF_OFFSET,
+    CONF_RESYNC_MINUTES,
     CONF_ROOM_NAME,
     CONF_ROOMS,
     DEFAULT_NAME,
     DEFAULT_OFF_BELOW,
     DEFAULT_OFFSET,
+    DEFAULT_RESYNC_MINUTES,
     DOMAIN,
     OFF_BELOW_MAX,
     OFF_BELOW_MIN,
@@ -210,6 +214,12 @@ class CozyHomeConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the subentry flows this integration supports."""
         return {SUBENTRY_TYPE_ROOM: RoomSubentryFlowHandler}
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """The "Configure" dialog: integration-level settings."""
+        return CozyHomeOptionsFlow()
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Pick the master (boiler) thermostat."""
         if user_input is not None:
@@ -272,6 +282,44 @@ class CozyHomeConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure", data_schema=_master_schema(dict(entry.data))
         )
+
+
+class CozyHomeOptionsFlow(OptionsFlow):
+    """Integration settings: enabled, and the optional re-sync interval.
+
+    Saving updates the entry options; the update listener in __init__ then
+    reloads the entry so the controller picks them up.
+    """
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    CONF_ENABLED: bool(user_input[CONF_ENABLED]),
+                    CONF_RESYNC_MINUTES: int(user_input[CONF_RESYNC_MINUTES]),
+                }
+            )
+        options = self.config_entry.options
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ENABLED, default=options.get(CONF_ENABLED, True)
+                ): selector.BooleanSelector(),
+                vol.Required(
+                    CONF_RESYNC_MINUTES,
+                    default=options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=1440,
+                        step=5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
 
 
 class RoomSubentryFlowHandler(ConfigSubentryFlow):

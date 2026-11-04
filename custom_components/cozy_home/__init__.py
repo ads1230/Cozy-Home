@@ -12,6 +12,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
@@ -71,6 +72,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> 
     controller = HeatingController(hass, entry)
     await controller.async_setup()
     entry.runtime_data = controller
+
+    # Pre-0.3 installs had a global on/off switch entity; it's an integration
+    # setting now ("Configure"), so clean up the orphaned registry entry.
+    ent_reg = er.async_get(hass)
+    if stale := ent_reg.async_get_entity_id(Platform.SWITCH, DOMAIN, f"{entry.entry_id}_enabled"):
+        ent_reg.async_remove(stale)
 
     # The hub device: rooms hang off it via ``via_device``.
     dr.async_get(hass).async_get_or_create(

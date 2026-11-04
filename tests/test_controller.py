@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -50,7 +52,7 @@ async def test_initial_sync_applies_offset(
     assert hass.states.get("number.bedroom_offset").state == "-2.0"
     assert hass.states.get("number.bedroom_turn_off_below").state == "10.0"
     assert hass.states.get("switch.bedroom_follow_master").state == "on"
-    assert hass.states.get("switch.heating_enabled").state == "on"
+    assert hass.states.get("switch.heating_enabled") is None  # global on/off is a setting now
 
 
 async def test_master_change_pushes_rooms(
@@ -152,7 +154,7 @@ async def test_offset_entity_changes_target(
     assert _modes(climate_calls) == ["off"]
 
 
-async def test_follow_switch_and_hub_switch(
+async def test_follow_switch(
     hass: HomeAssistant, config_entry: MockConfigEntry, climate_calls
 ) -> None:
     set_master(hass, temperature=20)
@@ -174,19 +176,76 @@ async def test_follow_switch_and_hub_switch(
     await hass.async_block_till_done()
     assert _temps(climate_calls) == [23.0]
 
-    _clear(climate_calls)
-    await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": "switch.heating_enabled"}, blocking=True
+
+async def test_options_flow_disables_and_resyncs(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The Configure dialog holds the global on/off and the re-sync interval."""
+    freezer.move_to(_utc(0, 9, 0))
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"enabled": False, "resync_minutes": 0}
     )
-    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert config_entry.options == {"enabled": False, "resync_minutes": 0}
+    await _tick(hass, freezer, _utc(0, 9, 2))  # debounced reload
     assert hass.states.get("sensor.bedroom_mode").state == "disabled"
     assert (
         hass.states.get("sensor.bedroom_target_temperature").attributes["reason"]
         == "global_disabled"
     )
-    set_master(hass, temperature=20)
+    set_master(hass, temperature=25)
     await hass.async_block_till_done()
     assert _temps(climate_calls) == []
+
+    # Re-enable with a 30-minute re-sync
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"enabled": True, "resync_minutes": 30}
+    )
+    await _tick(hass, freezer, _utc(0, 9, 4))
+    assert _temps(climate_calls) == [23.0]
+    assert hass.states.get("sensor.bedroom_mode").state == "follow"
+
+    # Someone turns the TRV down; nothing changes on our side...
+    set_trv(hass, BEDROOM, temperature=15)
+    _clear(climate_calls)
+    await _tick(hass, freezer, _utc(0, 9, 20))
+    assert _temps(climate_calls) == []
+    # ...until the re-sync interval has passed, then the target is re-applied
+    await _tick(hass, freezer, _utc(0, 9, 35))
+    assert _temps(climate_calls) == [23.0]
+
+
+async def test_stored_enabled_flag_migrates_to_options(
+    hass: HomeAssistant, config_entry: MockConfigEntry, climate_calls, hass_storage
+) -> None:
+    """Pre-0.3 installs kept the global switch in storage (and as an entity)."""
+    hass_storage[f"{DOMAIN}.{config_entry.entry_id}"] = {
+        "version": 1,
+        "data": {"enabled": False, "master_schedule": {}, "rooms": {}},
+    }
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        "switch", DOMAIN, f"{config_entry.entry_id}_enabled", config_entry=config_entry
+    )
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+
+    assert config_entry.options["enabled"] is False
+    assert hass.states.get("sensor.bedroom_mode").state == "disabled"
+    assert ent_reg.async_get_entity_id("switch", DOMAIN, f"{config_entry.entry_id}_enabled") is None
+    assert "enabled" not in hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
 
 
 async def test_room_thermostat_unavailable_then_back(

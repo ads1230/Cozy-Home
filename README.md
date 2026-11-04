@@ -50,11 +50,20 @@ Each room becomes a device with its own controls:
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
 | `sensor.<room>_schedule` | The block in effect now; attribute `schedule` holds the whole week (read by the card) |
-| `switch.<hub>_enabled` | Global on/off (e.g. for summer) |
 
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
 entities are the source of truth and they survive restarts. The behaviour options (off mode,
 frost temperature, master-off) live in the room device's *Configuration* section.
+
+### Integration settings
+
+The ⚙️ **Configure** button on the integration page holds the settings that apply to the
+whole integration rather than a room:
+
+| Setting | What it does |
+|---|---|
+| **Enabled** | Turn off to stop Cozy Home touching any thermostat (e.g. over summer). Rooms keep their settings and schedules. (HA's own ⋮ → *Disable* on the integration does the same but also unloads all the entities.) |
+| **Re-apply targets every** | Minutes between re-sending each room's target even if nothing changed — for thermostats that drift back to their own schedule. `0` (default) only pushes when something changes. Nothing is sent to a thermostat that already matches. |
 
 ## How it decides what a room should do
 
@@ -86,8 +95,8 @@ if it was off and given the new target — no manual intervention for the next h
 
 Commands are only sent when the desired state changes, and never when the thermostat already
 reports that state — so a TRV adjusted by hand is not fought until the next real change. If
-you *want* it enforced (some TRVs drift back to an internal schedule), call
-`cozy_home.sync` from an automation every so often.
+you *want* it enforced (some TRVs drift back to an internal schedule), set **Re-apply targets
+every** in the integration's Configure dialog, or call `cozy_home.sync` from an automation.
 
 ## Schedules
 

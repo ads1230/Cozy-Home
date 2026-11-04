@@ -59,17 +59,20 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CLIMATE_ENTITY,
+    CONF_ENABLED,
     CONF_FROST_TEMPERATURE,
     CONF_MASTER_ENTITY,
     CONF_MASTER_OFF,
     CONF_OFF_BELOW,
     CONF_OFF_MODE,
     CONF_OFFSET,
+    CONF_RESYNC_MINUTES,
     DEFAULT_FROST_TEMPERATURE,
     DEFAULT_MASTER_OFF,
     DEFAULT_OFF_BELOW,
     DEFAULT_OFF_MODE,
     DEFAULT_OFFSET,
+    DEFAULT_RESYNC_MINUTES,
     DOMAIN,
     MASTER_OFF_HOLD,
     MASTER_OFF_OPTIONS,
@@ -154,8 +157,11 @@ class HeatingController:
         self.master_entity: str = entry.data[CONF_MASTER_ENTITY]
         self.rooms: dict[str, RoomState] = {}
         self.master_schedule: Schedule = {}
-        self.enabled = True
+        # Integration settings live in the entry options ("Configure").
+        self.enabled = bool(entry.options.get(CONF_ENABLED, True))
+        self.resync_minutes = int(entry.options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES))
         self.master_active_block: tuple[str, Block] | None = None
+        self._last_resync: datetime | None = None
 
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
@@ -171,7 +177,15 @@ class HeatingController:
     async def async_setup(self) -> None:
         """Load stored settings and start watching entities and the clock."""
         stored = await self._store.async_load() or {}
-        self.enabled = bool(stored.get("enabled", True))
+        migrate_enabled = "enabled" in stored
+        if migrate_enabled and CONF_ENABLED not in self.entry.options:
+            # Pre-0.3 installs kept the global switch here; it is an entry
+            # option now. (No update listener is registered yet, so this
+            # doesn't trigger a reload.)
+            self.enabled = bool(stored["enabled"])
+            self.hass.config_entries.async_update_entry(
+                self.entry, options={**self.entry.options, CONF_ENABLED: self.enabled}
+            )
         self.master_schedule = normalize(stored.get("master_schedule"))
         stored_rooms: dict[str, dict[str, Any]] = stored.get("rooms", {})
 
@@ -207,7 +221,9 @@ class HeatingController:
                 schedule=normalize(saved.get("schedule")),
             )
 
-        if set(stored_rooms) - set(self.rooms):
+        if migrate_enabled:
+            await self._store.async_save(self._data_to_save())  # drop the old key now
+        elif set(stored_rooms) - set(self.rooms):
             # Rooms that were removed: drop their stored settings.
             self._mark_dirty()
 
@@ -266,7 +282,6 @@ class HeatingController:
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
-            "enabled": self.enabled,
             "master_schedule": self.master_schedule,
             "rooms": {
                 room.subentry_id: {
@@ -347,12 +362,6 @@ class HeatingController:
         self._mark_dirty()
         await self.async_sync_all()
 
-    async def async_set_enabled(self, enabled: bool) -> None:
-        self.enabled = enabled
-        self._last_master_block_key = None
-        self._mark_dirty()
-        await self.async_sync_all()
-
     # ------------------------------------------------------------------ events
 
     async def _async_state_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -370,8 +379,16 @@ class HeatingController:
             if room.climate_entity == entity_id:
                 await self.async_sync_room(room.subentry_id, force=not new_bad)
 
-    async def _async_minute_tick(self, _now: datetime) -> None:
-        await self.async_sync_all()
+    async def _async_minute_tick(self, now: datetime) -> None:
+        # Normally only changes are pushed. With a re-sync interval set, targets
+        # are re-applied periodically so a thermostat that drifted back to its
+        # own schedule is corrected (nothing is sent if it already matches).
+        force = (
+            self.resync_minutes > 0
+            and self._last_resync is not None
+            and (now - self._last_resync).total_seconds() >= self.resync_minutes * 60
+        )
+        await self.async_sync_all(force=force)
 
     # -------------------------------------------------------------------- sync
 
@@ -380,6 +397,8 @@ class HeatingController:
         await self._async_apply_master_schedule(force=force)
         for subentry_id in list(self.rooms):
             await self.async_sync_room(subentry_id, force=force)
+        if force or self._last_resync is None:
+            self._last_resync = dt_util.utcnow()
 
     async def async_sync_room(self, subentry_id: str, *, force: bool = False) -> None:
         """Recompute one room and push to its thermostat if anything changed."""

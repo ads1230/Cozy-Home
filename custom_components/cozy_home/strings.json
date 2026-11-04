@@ -112,9 +112,6 @@
       }
     },
     "switch": {
-      "enabled": {
-        "name": "Enabled"
-      },
       "follow_master": {
         "name": "Follow master"
       }
@@ -192,6 +189,21 @@
     },
     "invalid_schedule": {
       "message": "Invalid schedule: {error}"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cozy Home settings",
+        "data": {
+          "enabled": "Enabled",
+          "resync_minutes": "Re-apply targets every"
+        },
+        "data_description": {
+          "enabled": "Turn off to stop Cozy Home touching any thermostat (for example over summer). Rooms keep their settings and schedules.",
+          "resync_minutes": "Minutes between re-sending each room's target even if nothing changed, for thermostats that drift back to their own schedule. 0 only pushes when something changes."
+        }
+      }
     }
   }
 }

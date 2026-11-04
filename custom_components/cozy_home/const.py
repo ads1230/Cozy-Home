@@ -22,6 +22,11 @@ CONF_OFF_MODE: Final = "off_mode"
 CONF_FROST_TEMPERATURE: Final = "frost_temperature"
 CONF_ROOMS: Final = "rooms"  # multi-select of thermostats in the add-rooms forms
 
+# Integration settings (config entry options, edited via "Configure")
+CONF_ENABLED: Final = "enabled"
+CONF_RESYNC_MINUTES: Final = "resync_minutes"
+DEFAULT_RESYNC_MINUTES: Final = 0  # 0 = only push when something changes
+
 # What a room does while the master thermostat is switched off
 MASTER_OFF_TURN_OFF: Final = "off"  # switch the room thermostat off too
 MASTER_OFF_HOLD: Final = "hold"  # leave the room thermostat as it is
