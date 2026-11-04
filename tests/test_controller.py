@@ -734,18 +734,34 @@ async def test_schedule_sensors_and_entity_id_targets(
         )
 
 
-async def test_card_is_served(
+async def test_cards_and_panel_are_registered(
     hass: HomeAssistant, config_entry: MockConfigEntry, hass_client, climate_calls
 ) -> None:
-    """The bundled dashboard card is served from the integration's static path."""
+    """Cards are served and injected into the frontend; the sidebar panel exists."""
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS
+
     set_master(hass)
     set_trv(hass, BEDROOM)
     await setup_integration(hass, config_entry)
+    assert "frontend" in hass.config.components and "panel_custom" in hass.config.components
+
     client = await hass_client()
-    for name in ("cozy-home-schedule-card", "cozy-home-rooms-card"):
+    for name in ("cozy-home-schedule-card", "cozy-home-rooms-card", "cozy-home-panel"):
         resp = await client.get(f"/cozy_home/{name}.js")
         assert resp.status == 200
         assert name in await resp.text()
+
+    urls = hass.data[DATA_EXTRA_MODULE_URL].urls
+    assert any(u.startswith("/cozy_home/cozy-home-schedule-card.js?v=") for u in urls)
+    assert any(u.startswith("/cozy_home/cozy-home-rooms-card.js?v=") for u in urls)
+
+    panel = hass.data[DATA_PANELS]["cozy-home"]
+    assert panel.sidebar_title == "Cozy Home"
+    assert panel.config["_panel_custom"]["name"] == "cozy-home-panel"
+    assert panel.config["_panel_custom"]["module_url"].startswith(
+        "/cozy_home/cozy-home-panel.js?v="
+    )
+
     hub = hass.states.get("sensor.heating_schedule")
     assert hub.attributes["master_entity"] == MASTER
     assert hub.attributes["enabled"] is True

@@ -6,6 +6,8 @@ import logging
 from functools import partial
 from pathlib import Path
 
+from homeassistant.components import panel_custom
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -34,6 +36,8 @@ PLATFORMS: list[Platform] = [
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 CARD_FILES = ("cozy-home-schedule-card.js", "cozy-home-rooms-card.js")
+PANEL_FILE = "cozy-home-panel.js"
+PANEL_URL_PATH = "cozy-home"
 RELOAD_DEBOUNCE_SECONDS = 1.0
 
 type CozyHomeConfigEntry = ConfigEntry[HeatingController]
@@ -42,34 +46,45 @@ type CozyHomeConfigEntry = ConfigEntry[HeatingController]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the services and the dashboard card (once, not per entry)."""
     async_setup_services(hass)
-    await _async_register_cards(hass)
+    await _async_register_frontend(hass)
     return True
 
 
-async def _async_register_cards(hass: HomeAssistant) -> None:
-    """Serve the bundled dashboard cards and have the frontend load them.
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Serve the bundled cards and panel, and plug them into the frontend.
 
-    The cards are plain JS modules in ``www/``; registering them here means the
-    user doesn't have to add dashboard resources by hand.
+    * The two dashboard cards are plain JS modules in ``www/``; adding them as
+      extra module URLs means the user doesn't have to add dashboard
+      resources by hand.
+    * The "Cozy Home" sidebar panel shows the rooms overview and the schedule
+      editor on one page. Home Assistant loads the panel's module on demand,
+      so it works even when a cached page hasn't picked up the card scripts.
     """
     www = Path(__file__).parent / "www"
-    files = [name for name in CARD_FILES if (www / name).is_file()]
+    files = [name for name in (*CARD_FILES, PANEL_FILE) if (www / name).is_file()]
     if not files:
         return
+    integration = await async_get_integration(hass, DOMAIN)
+    version = integration.version
     await hass.http.async_register_static_paths(
         [
-            StaticPathConfig(f"/{DOMAIN}/{name}", str(www / name), cache_headers=True)
+            StaticPathConfig(f"/{DOMAIN}/{name}", str(www / name), cache_headers=False)
             for name in files
         ]
     )
-    if "frontend" not in hass.config.components:
-        return  # e.g. tests, or a headless install
-    # Imported lazily so the integration also loads where the frontend isn't set up.
-    from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
-
-    integration = await async_get_integration(hass, DOMAIN)
-    for name in files:
-        add_extra_js_url(hass, f"/{DOMAIN}/{name}?v={integration.version}")
+    for name in CARD_FILES:
+        if name in files:
+            add_extra_js_url(hass, f"/{DOMAIN}/{name}?v={version}")
+    if PANEL_FILE in files:
+        await panel_custom.async_register_panel(
+            hass,
+            frontend_url_path=PANEL_URL_PATH,
+            webcomponent_name="cozy-home-panel",
+            sidebar_title="Cozy Home",
+            sidebar_icon="mdi:radiator",
+            module_url=f"/{DOMAIN}/{PANEL_FILE}?v={version}",
+            require_admin=False,
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> bool:

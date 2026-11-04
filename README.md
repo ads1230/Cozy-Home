@@ -15,7 +15,7 @@ master (Hive, 20°)
    └─ Hallway   offset −5  → 15°  (below its 16° cut-off → thermostat OFF, or 7.5° frost protection)
 ```
 
-Requires Home Assistant **2025.3 or newer** (rooms are config subentries).
+Requires Home Assistant **2025.3 or newer** (rooms are config subentries) with the standard frontend.
 
 ## Install
 
@@ -130,6 +130,12 @@ reports that state — so a TRV adjusted by hand is not fought until the next re
 you *want* it enforced (some TRVs drift back to an internal schedule), set **Re-apply targets
 every** in the integration's Configure dialog, or call `cozy_home.sync` from an automation.
 
+## The Cozy Home page
+
+After installing, **Cozy Home** appears in the left sidebar. That page has the rooms overview
+and the schedule editor — the same two cards described below — with nothing to configure. Use
+the cards on your own dashboards when you want them laid out your way.
+
 ## Schedules
 
 A schedule is a list of **blocks per day**, exactly like the Hive app: each block starts at a
@@ -238,7 +244,7 @@ appears in HA only once it has been merged there. To do that:
 ## Development
 
 ```
-pip install pytest-homeassistant-custom-component
+pip install pytest-homeassistant-custom-component home-assistant-frontend
 pytest
 ```
 
