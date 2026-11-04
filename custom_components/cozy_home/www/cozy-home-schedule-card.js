@@ -10,6 +10,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
+  const VERSION = "0.6.1"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -499,7 +500,7 @@
 
       let body;
       if (!t) {
-        body = `<div class="empty">No Cozy Home rooms found. Add the integration and some rooms first.</div>`;
+        body = `<div class="empty">No Cozy Home rooms found. Add the integration and some rooms first — or, if you have just updated Cozy Home, reload this page (Ctrl/Cmd-Shift-R).</div>`;
       } else if (!this._draft) {
         body = `
           <div class="empty">
@@ -763,6 +764,10 @@
   `;
 
   if (!customElements.get(CARD_TYPE)) customElements.define(CARD_TYPE, CozyHomeScheduleCard);
+  // The sidebar panel picks the class up from here, so it always uses the
+  // code it just loaded even if a dashboard page has an older copy cached.
+  window.cozyHome = window.cozyHome || {};
+  window.cozyHome.cards = { ...(window.cozyHome.cards || {}), schedule: { cls: CozyHomeScheduleCard, version: VERSION } };
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === CARD_TYPE)) {
     window.customCards.push({

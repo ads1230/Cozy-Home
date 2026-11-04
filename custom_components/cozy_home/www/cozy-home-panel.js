@@ -11,6 +11,22 @@ const cardsReady = Promise.all([
   import(`./cozy-home-schedule-card.js${q}`),
 ]);
 
+/**
+ * Create a card element from the class the module we just loaded registered,
+ * under a version-stamped tag name. A dashboard page may still hold an older
+ * copy of the card under the plain tag (custom elements can't be redefined),
+ * and this sidesteps it.
+ */
+function freshElement(plainTag, key) {
+  const entry = window.cozyHome && window.cozyHome.cards && window.cozyHome.cards[key];
+  if (entry && entry.cls && entry.version) {
+    const tag = `${plainTag}-v${String(entry.version).replace(/[^0-9a-z]/gi, "-").toLowerCase()}`;
+    if (!customElements.get(tag)) customElements.define(tag, class extends entry.cls {});
+    return document.createElement(tag);
+  }
+  return document.createElement(plainTag);
+}
+
 class CozyHomePanel extends HTMLElement {
   constructor() {
     super();
@@ -73,9 +89,9 @@ class CozyHomePanel extends HTMLElement {
     cardsReady.then(
       () => {
         content.innerHTML = "";
-        this._rooms = document.createElement("cozy-home-rooms-card");
+        this._rooms = freshElement("cozy-home-rooms-card", "rooms");
         this._rooms.setConfig({ title: "Rooms" });
-        this._schedule = document.createElement("cozy-home-schedule-card");
+        this._schedule = freshElement("cozy-home-schedule-card", "schedule");
         this._schedule.setConfig({ title: "Schedule" });
         content.append(this._rooms, this._schedule);
         this._push();

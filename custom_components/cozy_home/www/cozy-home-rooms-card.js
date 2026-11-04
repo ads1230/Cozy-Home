@@ -13,6 +13,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
+  const VERSION = "0.6.1"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
     follow: "Following master",
@@ -255,7 +256,7 @@
       const title = esc(this._config.title || "Heating");
       let body = "";
       if (!this._rooms || (!this._rooms.length && !this._master)) {
-        body = `<div class="empty">No Cozy Home rooms found. Add the integration and some rooms first.</div>`;
+        body = `<div class="empty">No Cozy Home rooms found. Add the integration and some rooms first — or, if you have just updated Cozy Home, reload this page (Ctrl/Cmd-Shift-R).</div>`;
       } else {
         if (this._config.show_master && this._master) body += this._masterHTML(this._master);
         body += this._rooms.map((r) => this._roomHTML(this._roomView(r))).join("");
@@ -405,6 +406,10 @@
   `;
 
   if (!customElements.get(CARD_TYPE)) customElements.define(CARD_TYPE, CozyHomeRoomsCard);
+  // The sidebar panel picks the class up from here, so it always uses the
+  // code it just loaded even if a dashboard page has an older copy cached.
+  window.cozyHome = window.cozyHome || {};
+  window.cozyHome.cards = { ...(window.cozyHome.cards || {}), rooms: { cls: CozyHomeRoomsCard, version: VERSION } };
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === CARD_TYPE)) {
     window.customCards.push({

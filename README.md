@@ -248,7 +248,8 @@ pip install pytest-homeassistant-custom-component home-assistant-frontend
 pytest
 ```
 
-Releasing: bump `version` in `manifest.json`, commit and push to `main`. The *Release* workflow
+Releasing: bump `version` in `manifest.json` **and** the `VERSION` constant at the top of the two
+card files in `www/` (a test checks they match), commit and push to `main`. The *Release* workflow
 creates the tag and the GitHub release (with a zip of the integration) automatically, and HACS
 offers the update from there. The *Validate* workflow runs hassfest, the HACS checks and the
 test suite on every push.

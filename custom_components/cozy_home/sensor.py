@@ -53,6 +53,7 @@ def _schedule_attributes(
     """Attributes the schedule card reads (it finds these sensors by ``cozy_home``)."""
     return {
         "integration": DOMAIN,
+        DOMAIN: True,  # older copies of the cards look for this one
         "kind": kind,
         "modes": list(modes),
         "schedule": schedule,
