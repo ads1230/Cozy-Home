@@ -8,6 +8,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import CozyHomeConfigEntry
 from .const import (
@@ -18,7 +19,7 @@ from .const import (
     SUBENTRY_TYPE_ROOM,
 )
 from .entity import CozyHomeEntity, CozyHomeRoomEntity
-from .schedule import Block, describe_block
+from .schedule import Block, describe_block, summarize
 
 
 async def async_setup_entry(
@@ -51,7 +52,7 @@ def _schedule_attributes(
 ) -> dict[str, Any]:
     """Attributes the schedule card reads (it finds these sensors by ``cozy_home``)."""
     return {
-        DOMAIN: True,
+        "integration": DOMAIN,
         "kind": kind,
         "modes": list(modes),
         "schedule": schedule,
@@ -70,7 +71,7 @@ class RoomScheduleSensor(CozyHomeRoomEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return describe_block(self.room.active_block) or "none"
+        return summarize(self.room.schedule, dt_util.now(), none_text="No schedule")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -90,8 +91,9 @@ class MasterScheduleSensor(CozyHomeEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        active = self._controller.master_active_block
-        return describe_block(active[1]) if active else "none"
+        return summarize(
+            self._controller.master_schedule, dt_util.now(), none_text="Not scheduled here"
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

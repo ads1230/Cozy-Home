@@ -60,7 +60,7 @@ Each room becomes a device with its own controls:
 | `select.<room>_when_master_is_off` | **Off action** (default), or **Hold last target** — leave the thermostats as they are until the master comes back |
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, the room's thermostats and what each was set to, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
-| `sensor.<room>_schedule` | The block in effect now; attribute `schedule` holds the whole week (read by the card) |
+| `sensor.<room>_schedule` | What the schedule is doing now, e.g. "Master -2° until 17:00" or "No schedule"; attribute `schedule` holds the whole week (read by the card) |
 
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
 entities are the source of truth and they survive restarts. The cut-off, off action, frost

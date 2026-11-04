@@ -132,6 +132,51 @@ def active_block(schedule: Schedule, now: datetime) -> tuple[str, Block] | None:
     return None
 
 
+def next_block(schedule: Schedule, now: datetime) -> tuple[str, Block, int] | None:
+    """Return ``(day, block, days_ahead)`` for the next block to start after ``now``."""
+    if not schedule:
+        return None
+    weekday = now.weekday()
+    hhmm = now.strftime("%H:%M")
+    for ahead in range(8):
+        day = DAYS[(weekday + ahead) % 7]
+        blocks = schedule.get(day)
+        if not blocks:
+            continue
+        candidates = [b for b in blocks if b["time"] > hhmm] if ahead == 0 else blocks
+        if candidates:
+            return day, candidates[0], ahead
+    return None
+
+
+DAY_NAMES = {
+    "mon": "Mon",
+    "tue": "Tue",
+    "wed": "Wed",
+    "thu": "Thu",
+    "fri": "Fri",
+    "sat": "Sat",
+    "sun": "Sun",
+}
+
+
+def summarize(schedule: Schedule, now: datetime, *, none_text: str) -> str:
+    """Human text for a sensor state: "Master −2° until 17:00", "Off until Sat 07:30"."""
+    found = active_block(schedule, now)
+    if found is None:
+        return none_text
+    label = describe_block(found[1]) or ""
+    label = (
+        ("Master" + label[len("follow") :]) if label.startswith("follow") else label.capitalize()
+    )
+    nxt = next_block(schedule, now)
+    if nxt is None:
+        return label
+    day, block, ahead = nxt
+    until = block["time"] if ahead == 0 else f"{DAY_NAMES[day]} {block['time']}"
+    return f"{label} until {until}"
+
+
 def describe_block(block: Block | None) -> str | None:
     """Short human-readable label for a block (used in sensor attributes)."""
     if block is None:

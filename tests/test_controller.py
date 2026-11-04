@@ -693,8 +693,8 @@ async def test_schedule_sensors_and_entity_id_targets(
     await setup_integration(hass, config_entry)
 
     room = hass.states.get("sensor.bedroom_schedule")
-    assert room.state == "none"
-    assert room.attributes["cozy_home"] is True
+    assert room.state == "No schedule"
+    assert room.attributes["integration"] == "cozy_home"
     assert room.attributes["kind"] == "room"
     assert room.attributes["modes"] == ["follow", "fixed", "off"]
     assert room.attributes["schedule"] == {}
@@ -713,7 +713,7 @@ async def test_schedule_sensors_and_entity_id_targets(
     )
     await hass.async_block_till_done()
     room = hass.states.get("sensor.bedroom_schedule")
-    assert room.state == "fixed 19°"
+    assert room.state == "Fixed 19° until Mon 08:00"  # only block in the week
     assert room.attributes["active_day"] == "mon"
     assert room.attributes["active_time"] == "08:00"
     assert room.attributes["schedule"]["mon"][0]["temperature"] == 19.0
@@ -723,7 +723,7 @@ async def test_schedule_sensors_and_entity_id_targets(
         DOMAIN, "clear_schedule", {"entity_id": "sensor.bedroom_schedule"}, blocking=True
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.bedroom_schedule").state == "none"
+    assert hass.states.get("sensor.bedroom_schedule").state == "No schedule"
 
     import pytest
     from homeassistant.exceptions import ServiceValidationError

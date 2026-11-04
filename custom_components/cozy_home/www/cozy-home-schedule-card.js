@@ -185,7 +185,7 @@
       const devices = hass.devices || {};
       const targets = [];
       for (const [entityId, state] of Object.entries(hass.states)) {
-        if (!entityId.startsWith("sensor.") || !state.attributes[DOMAIN] || !state.attributes.kind) continue;
+        if (!entityId.startsWith("sensor.") || state.attributes.integration !== DOMAIN || !state.attributes.kind) continue;
         const reg = entities[entityId] || {};
         const device = reg.device_id ? devices[reg.device_id] : null;
         const name =

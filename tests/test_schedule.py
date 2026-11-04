@@ -10,7 +10,9 @@ import voluptuous as vol
 from custom_components.cozy_home.schedule import (
     active_block,
     describe_block,
+    next_block,
     normalize,
+    summarize,
     validate,
 )
 
@@ -118,3 +120,15 @@ def test_describe_block() -> None:
     assert describe_block({"time": "08:00", "mode": "fixed", "temperature": 17.5}) == "fixed 17.5°"
     assert describe_block({"time": "08:00", "mode": "follow", "offset": -2.0}) == "follow -2°"
     assert describe_block({"time": "08:00", "mode": "follow"}) == "follow"
+
+
+def test_next_block_and_summary() -> None:
+    # Monday 09:00: in the 08:30 "follow −3" block, next is 17:00 today
+    assert next_block(SCHED, _dt(0, 9))[1]["time"] == "17:00"
+    assert summarize(SCHED, _dt(0, 9), none_text="No schedule") == "Master -3° until 17:00"
+    # Sunday 23:00: fixed 17 until Monday 06:30
+    assert summarize(SCHED, _dt(6, 23), none_text="No schedule") == "Fixed 17° until Mon 06:30"
+    assert summarize({}, _dt(0, 9), none_text="No schedule") == "No schedule"
+    only = validate({"wed": [{"time": "18:00", "mode": "off"}]})
+    assert summarize(only, _dt(2, 10), none_text="x") == "Off until 18:00"
+    assert summarize(only, _dt(2, 19), none_text="x") == "Off until Wed 18:00"

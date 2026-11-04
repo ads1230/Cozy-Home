@@ -130,7 +130,7 @@
       // Fallback without a registry: find schedule sensors by their marker attribute.
       if (!byDevice.size) {
         for (const [entityId, st] of Object.entries(hass.states)) {
-          if (st.attributes[DOMAIN] && st.attributes.kind) byDevice.set(entityId, { schedule: entityId });
+          if (st.attributes.integration === DOMAIN && st.attributes.kind) byDevice.set(entityId, { schedule: entityId });
         }
       }
       const rooms = [];
