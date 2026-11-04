@@ -9,11 +9,11 @@
  *   title: Heating
  *   rooms: [sensor.bedroom_schedule, ...]   # only these rooms, in this order
  *   show_thermostats: true                   # list each room's radiators
- *   show_master: true
+ *   show_master: false       # the master thermostat has its own card (cozy-home-master-card)
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.7.0"; // kept in step with manifest.json
+  const VERSION = "0.8.0"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
     follow: "Following master",
@@ -64,7 +64,7 @@
     }
 
     setConfig(config) {
-      this._config = { show_thermostats: true, show_master: true, ...(config || {}) };
+      this._config = { show_thermostats: true, show_master: false, ...(config || {}) };
       if (this._hass) {
         this._collect();
         this._sig = this._signature();
@@ -419,7 +419,7 @@
     window.customCards.push({
       type: CARD_TYPE,
       name: "Cozy Home Rooms",
-      description: "Overview of the master thermostat and every Cozy Home room: temperature, target, mode, offset and the radiators it controls.",
+      description: "Every Cozy Home room: temperature, target, mode, offset and the radiators it controls.",
       preview: true,
     });
   }

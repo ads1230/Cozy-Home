@@ -78,6 +78,14 @@ whole integration rather than a room:
 | **Enabled** | Turn off to stop Cozy Home touching any thermostat (e.g. over summer). Rooms keep their settings and schedules. (HA's own ⋮ → *Disable* on the integration does the same but also unloads all the entities.) |
 | **Re-apply targets every** | Minutes between re-sending each room's target even if nothing changed — for thermostats that drift back to their own schedule. `0` (default) only pushes when something changes. Nothing is sent to a thermostat that already matches. |
 
+## The thermostat card
+
+Edit a dashboard → **Add card** → *Cozy Home Thermostat*, or `type: custom:cozy-home-master-card`.
+The master (boiler) thermostat at a glance: the current temperature large, whether it is
+**heating**, idle or off, the target, and what the heating schedule is doing. −/+ nudge the
+target (the same as turning the thermostat up by hand: it holds until the next schedule block).
+Options: `title`, `show_schedule: false`, `show_controls: false`.
+
 ## The rooms card
 
 Edit a dashboard → **Add card** → *Cozy Home Rooms*, or in YAML:
@@ -88,11 +96,10 @@ type: custom:cozy-home-rooms-card
 # title: Heating
 # rooms: [sensor.upstairs_target_temperature, sensor.bedroom_target_temperature]   # only these, in this order
 # show_thermostats: true
-# show_master: true
+# show_master: true    # also show the master row (off by default; the thermostat card does that)
 ```
 
-It shows the master thermostat (current → target, heating or not) and every room: the room's
-temperature (average of its radiators) → target, what it is doing and why ("Following master",
+It shows every room: the room's temperature (average of its radiators) → target, what it is doing and why ("Following master",
 "Off · below cut-off", "Frost protection · schedule"…), an offset −/+ control, the *Follow
 master* toggle, and the radiators it controls with their own temperature and setpoint. Tap a
 radiator for its dialog, tap a room name for its device page.
@@ -132,9 +139,9 @@ every** in the integration's Configure dialog, or call `cozy_home.sync` from an 
 
 ## The Cozy Home page
 
-After installing, **Cozy Home** appears in the left sidebar. That page has the rooms overview
-and the heating schedule editor — the same two cards described below — with nothing to
-configure. Use the cards on your own dashboards when you want them laid out your way.
+After installing, **Cozy Home** appears in the left sidebar. That page has the thermostat, the
+heating schedule editor and the rooms overview — the three cards described below — with
+nothing to configure. Use the cards on your own dashboards when you want them laid out your way.
 
 ## The heating schedule
 

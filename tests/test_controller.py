@@ -769,7 +769,12 @@ async def test_cards_and_panel_are_registered(
     assert "frontend" in hass.config.components and "panel_custom" in hass.config.components
 
     client = await hass_client()
-    for name in ("cozy-home-schedule-card", "cozy-home-rooms-card", "cozy-home-panel"):
+    for name in (
+        "cozy-home-master-card",
+        "cozy-home-schedule-card",
+        "cozy-home-rooms-card",
+        "cozy-home-panel",
+    ):
         resp = await client.get(f"/cozy_home/{name}.js")
         assert resp.status == 200
         assert name in await resp.text()

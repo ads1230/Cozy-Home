@@ -35,7 +35,7 @@ PLATFORMS: list[Platform] = [
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-CARD_FILES = ("cozy-home-schedule-card.js", "cozy-home-rooms-card.js")
+CARD_FILES = ("cozy-home-master-card.js", "cozy-home-schedule-card.js", "cozy-home-rooms-card.js")
 PANEL_FILE = "cozy-home-panel.js"
 PANEL_URL_PATH = "cozy-home"
 RELOAD_DEBOUNCE_SECONDS = 1.0

@@ -1,14 +1,15 @@
 /*
- * Cozy Home sidebar panel: the rooms overview and the schedule editor on one
- * page, reachable from "Cozy Home" in the left menu. Home Assistant loads
+ * Cozy Home sidebar panel: the thermostat, the heating schedule and the rooms on
+ * one page, reachable from "Cozy Home" in the left menu. Home Assistant loads
  * this module on demand when the panel is opened, so it doesn't depend on the
  * dashboard page having picked up the card scripts.
  */
 const version = new URL(import.meta.url).searchParams.get("v") || "";
 const q = version ? `?v=${encodeURIComponent(version)}` : "";
 const cardsReady = Promise.all([
-  import(`./cozy-home-rooms-card.js${q}`),
+  import(`./cozy-home-master-card.js${q}`),
   import(`./cozy-home-schedule-card.js${q}`),
+  import(`./cozy-home-rooms-card.js${q}`),
 ]);
 
 /**
@@ -89,11 +90,13 @@ class CozyHomePanel extends HTMLElement {
     cardsReady.then(
       () => {
         content.innerHTML = "";
-        this._rooms = freshElement("cozy-home-rooms-card", "rooms");
-        this._rooms.setConfig({ title: "Rooms" });
+        this._master = freshElement("cozy-home-master-card", "master");
+        this._master.setConfig({});
         this._schedule = freshElement("cozy-home-schedule-card", "schedule");
         this._schedule.setConfig({ title: "Heating schedule" });
-        content.append(this._rooms, this._schedule);
+        this._rooms = freshElement("cozy-home-rooms-card", "rooms");
+        this._rooms.setConfig({ title: "Rooms", show_master: false });
+        content.append(this._master, this._schedule, this._rooms);
         this._push();
       },
       (err) => {
@@ -104,8 +107,9 @@ class CozyHomePanel extends HTMLElement {
 
   _push() {
     if (!this._hass || !this._rooms) return;
-    this._rooms.hass = this._hass;
+    this._master.hass = this._hass;
     this._schedule.hass = this._hass;
+    this._rooms.hass = this._hass;
   }
 }
 
