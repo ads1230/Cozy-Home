@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.6"; // kept in step with manifest.json
+  const VERSION = "0.8.7"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -759,11 +759,11 @@
     .row.today .dlabel { font-weight: 700; color: var(--ch-follow); }
     .dlabel { width: 28px; flex: none; font-size: 0.95em; color: var(--primary-text-color); }
     .track { position: relative; flex: 1; height: 100%; touch-action: pan-y; }
-    .blk { position: absolute; top: 0; bottom: 0; border-radius: 22px; display: flex; align-items: center; justify-content: center;
+    .blk { position: absolute; top: 0; bottom: 0; border-radius: 8px; display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 0.9em; font-weight: 500; cursor: pointer; box-sizing: border-box; overflow: hidden;
       border: 2px solid transparent; --mdc-icon-size: 18px; user-select: none; -webkit-user-select: none; }
-    .blk.first { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
-    .blk.last { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+    .blk.first { border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+    .blk.last { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
     .blk.follow { background: var(--ch-follow); }
     .blk.fixed { background: var(--ch-fixed); color: var(--ch-fixed-ink); }
     .blk.fixed.mild { background: #F2A541; }
@@ -778,7 +778,7 @@
     .blk.fixed.warm .grip::after { background: rgba(255,255,255,0.55); }
     .nowline { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--secondary-text-color); opacity: 0.7;
       transform: translateX(-1px); pointer-events: none; }
-    .panel, .editor { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--secondary-background-color, rgba(0,0,0,0.04)); }
+    .panel, .editor { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: var(--secondary-background-color, rgba(0,0,0,0.04)); }
     .copy { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .chip { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--divider-color, #ddd); background: transparent; color: var(--primary-text-color); }
     .chip.on { background: var(--ch-follow); border-color: var(--ch-follow); color: #fff; }
@@ -807,7 +807,7 @@
       ha-card { padding: 12px; }
       .axis .h3 { display: none; }
       .row { height: 38px; margin-bottom: 6px; }
-      .blk { font-size: 0.8em; border-radius: 19px; }
+      .blk { font-size: 0.8em; border-radius: 6px; }
       select { max-width: 50%; }
     }
   `;
