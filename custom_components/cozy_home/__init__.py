@@ -76,10 +76,13 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         if name in files:
             add_extra_js_url(hass, f"/{DOMAIN}/{name}?v={version}")
     if PANEL_FILE in files:
+        # Version-stamped element name: an already-open page builds the new
+        # panel after an update instead of reusing the old element definition.
+        slug = "".join(c if c.isalnum() else "-" for c in str(version)).lower()
         await panel_custom.async_register_panel(
             hass,
             frontend_url_path=PANEL_URL_PATH,
-            webcomponent_name="cozy-home-panel",
+            webcomponent_name=f"cozy-home-panel-v{slug}",
             sidebar_title="Cozy Home",
             sidebar_icon="mdi:radiator",
             module_url=f"/{DOMAIN}/{PANEL_FILE}?v={version}",

@@ -113,4 +113,9 @@ class CozyHomePanel extends HTMLElement {
   }
 }
 
-if (!customElements.get("cozy-home-panel")) customElements.define("cozy-home-panel", CozyHomePanel);
+// The integration registers the panel under a version-stamped element name
+// (e.g. cozy-home-panel-v0-8-2) so that after an update a page that is still
+// open creates the new panel rather than reusing an old element definition.
+const slug = version ? `cozy-home-panel-v${version.replace(/[^0-9a-z]/gi, "-").toLowerCase()}` : null;
+if (slug && !customElements.get(slug)) customElements.define(slug, CozyHomePanel);
+if (!customElements.get("cozy-home-panel")) customElements.define("cozy-home-panel", class extends CozyHomePanel {});

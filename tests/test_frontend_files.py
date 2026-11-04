@@ -27,4 +27,4 @@ def test_panel_imports_both_cards() -> None:
     assert "cozy-home-master-card.js" in source
     assert "cozy-home-rooms-card.js" in source
     assert "cozy-home-schedule-card.js" in source
-    assert 'customElements.define("cozy-home-panel"' in source
+    assert "cozy-home-panel-v" in source

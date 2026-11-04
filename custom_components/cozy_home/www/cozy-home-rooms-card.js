@@ -13,7 +13,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.1"; // kept in step with manifest.json
+  const VERSION = "0.8.2"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
     follow: "Following master",
@@ -187,7 +187,10 @@
           applied: (attrs.applied || {})[id],
         };
       });
-      const temps = thermostats.map((t) => Number(t.current)).filter((v) => !Number.isNaN(v));
+      const temps = thermostats
+        .filter((t) => t.current != null && t.current !== "" && t.hvac !== "unavailable")
+        .map((t) => Number(t.current))
+        .filter((v) => !Number.isNaN(v));
       const current = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
       return {
         ...room,

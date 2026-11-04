@@ -785,7 +785,7 @@ async def test_cards_and_panel_are_registered(
 
     panel = hass.data[DATA_PANELS]["cozy-home"]
     assert panel.sidebar_title == "Cozy Home"
-    assert panel.config["_panel_custom"]["name"] == "cozy-home-panel"
+    assert panel.config["_panel_custom"]["name"].startswith("cozy-home-panel-v")
     assert panel.config["_panel_custom"]["module_url"].startswith(
         "/cozy_home/cozy-home-panel.js?v="
     )
