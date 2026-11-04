@@ -742,10 +742,13 @@ async def test_card_is_served(
     set_trv(hass, BEDROOM)
     await setup_integration(hass, config_entry)
     client = await hass_client()
-    resp = await client.get("/cozy_home/cozy-home-schedule-card.js")
-    assert resp.status == 200
-    body = await resp.text()
-    assert "cozy-home-schedule-card" in body
+    for name in ("cozy-home-schedule-card", "cozy-home-rooms-card"):
+        resp = await client.get(f"/cozy_home/{name}.js")
+        assert resp.status == 200
+        assert name in await resp.text()
+    hub = hass.states.get("sensor.heating_schedule")
+    assert hub.attributes["master_entity"] == MASTER
+    assert hub.attributes["enabled"] is True
 
 
 async def test_room_with_two_radiators(hass: HomeAssistant, climate_calls) -> None:

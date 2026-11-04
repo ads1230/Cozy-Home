@@ -76,6 +76,25 @@ whole integration rather than a room:
 | **Enabled** | Turn off to stop Cozy Home touching any thermostat (e.g. over summer). Rooms keep their settings and schedules. (HA's own ⋮ → *Disable* on the integration does the same but also unloads all the entities.) |
 | **Re-apply targets every** | Minutes between re-sending each room's target even if nothing changed — for thermostats that drift back to their own schedule. `0` (default) only pushes when something changes. Nothing is sent to a thermostat that already matches. |
 
+## The rooms card
+
+Edit a dashboard → **Add card** → *Cozy Home Rooms*, or in YAML:
+
+```yaml
+type: custom:cozy-home-rooms-card
+# optional:
+# title: Heating
+# rooms: [sensor.upstairs_schedule, sensor.bedroom_schedule]   # only these, in this order
+# show_thermostats: true
+# show_master: true
+```
+
+It shows the master thermostat (current → target, heating or not) and every room: the room's
+temperature (average of its radiators) → target, what it is doing and why ("Following master",
+"Off · below cut-off", "Frost protection · schedule"…), an offset −/+ control, the *Follow
+master* toggle, and the radiators it controls with their own temperature and setpoint. Tap a
+radiator for its dialog, tap a room name for its device page.
+
 ## How it decides what a room should do
 
 Evaluated whenever the master changes, a room setting changes, a schedule block starts, or a
@@ -117,7 +136,8 @@ Monday has no block at 00:00, Sunday's last block is still in force.
 
 ### The schedule card
 
-The integration bundles a dashboard card and registers it itself (no *Resources* step).
+The integration bundles two dashboard cards and registers them itself (no *Resources* step):
+*Cozy Home Rooms* (overview, see below) and *Cozy Home Schedule* (the editor).
 Edit a dashboard → **Add card** → search *Cozy Home Schedule*, or in YAML:
 
 ```yaml

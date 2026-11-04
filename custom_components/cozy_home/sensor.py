@@ -95,12 +95,18 @@ class MasterScheduleSensor(CozyHomeEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return _schedule_attributes(
-            kind="master",
-            schedule=self._controller.master_schedule,
-            active=self._controller.master_active_block,
-            modes=MASTER_SCHEDULE_MODES,
-        )
+        return {
+            **_schedule_attributes(
+                kind="master",
+                schedule=self._controller.master_schedule,
+                active=self._controller.master_active_block,
+                modes=MASTER_SCHEDULE_MODES,
+            ),
+            # For the dashboard cards
+            "master_entity": self._controller.master_entity,
+            "enabled": self._controller.enabled,
+            "resync_minutes": self._controller.resync_minutes,
+        }
 
 
 class RoomTargetSensor(CozyHomeRoomEntity, SensorEntity):

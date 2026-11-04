@@ -33,8 +33,7 @@ PLATFORMS: list[Platform] = [
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-CARD_FILENAME = "cozy-home-schedule-card.js"
-CARD_URL = f"/{DOMAIN}/{CARD_FILENAME}"
+CARD_FILES = ("cozy-home-schedule-card.js", "cozy-home-rooms-card.js")
 RELOAD_DEBOUNCE_SECONDS = 1.0
 
 type CozyHomeConfigEntry = ConfigEntry[HeatingController]
@@ -43,21 +42,25 @@ type CozyHomeConfigEntry = ConfigEntry[HeatingController]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the services and the dashboard card (once, not per entry)."""
     async_setup_services(hass)
-    await _async_register_card(hass)
+    await _async_register_cards(hass)
     return True
 
 
-async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve the bundled schedule card and have the frontend load it.
+async def _async_register_cards(hass: HomeAssistant) -> None:
+    """Serve the bundled dashboard cards and have the frontend load them.
 
-    The card is a plain JS module in ``www/``; registering it here means the
-    user doesn't have to add a dashboard resource by hand.
+    The cards are plain JS modules in ``www/``; registering them here means the
+    user doesn't have to add dashboard resources by hand.
     """
-    card_path = Path(__file__).parent / "www" / CARD_FILENAME
-    if not card_path.is_file():
+    www = Path(__file__).parent / "www"
+    files = [name for name in CARD_FILES if (www / name).is_file()]
+    if not files:
         return
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(card_path), cache_headers=True)]
+        [
+            StaticPathConfig(f"/{DOMAIN}/{name}", str(www / name), cache_headers=True)
+            for name in files
+        ]
     )
     if "frontend" not in hass.config.components:
         return  # e.g. tests, or a headless install
@@ -65,7 +68,8 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
 
     integration = await async_get_integration(hass, DOMAIN)
-    add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
+    for name in files:
+        add_extra_js_url(hass, f"/{DOMAIN}/{name}?v={integration.version}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CozyHomeConfigEntry) -> bool:
