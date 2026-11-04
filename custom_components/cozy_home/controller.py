@@ -24,6 +24,7 @@ from homeassistant.components.climate import (
     ATTR_HVAC_MODES,
     ATTR_MAX_TEMP,
     ATTR_MIN_TEMP,
+    ATTR_PRESET_MODE,
     ATTR_TARGET_TEMP_STEP,
     SERVICE_SET_HVAC_MODE,
     SERVICE_SET_TEMPERATURE,
@@ -145,6 +146,11 @@ def _is_bad(state: State | None) -> bool:
     return state is None or state.state in BAD_STATES
 
 
+def is_boosted(state: State) -> bool:
+    """Whether a thermostat is running a boost (a temporary override)."""
+    return str(state.attributes.get(ATTR_PRESET_MODE) or "").lower() == "boost"
+
+
 def _option(value: Any, options: tuple[str, ...], default: str) -> str:
     return value if value in options else default
 
@@ -162,6 +168,7 @@ class HeatingController:
         self.enabled = bool(entry.options.get(CONF_ENABLED, True))
         self.resync_minutes = int(entry.options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES))
         self.master_active_block: tuple[str, Block] | None = None
+        self.master_block_pending = False  # a block is due but a boost is running
         self.entities_hidden_once = False  # one-time hide of pre-0.8.1 entities done
         self._last_resync: datetime | None = None
         self._ready = False  # no pushes until Home Assistant has fully started
@@ -620,10 +627,19 @@ class HeatingController:
         key = (day, block["time"])
         if key == self._last_master_block_key and not force:
             return
-        if _is_bad(self.hass.states.get(self.master_entity)):
+        state = self.hass.states.get(self.master_entity)
+        if _is_bad(state):
             # Try again on the next tick.
             self._last_master_block_key = None
+            self.master_block_pending = False
             return
+        assert state is not None
+        if is_boosted(state):
+            # Let a boost run its course. The block that is due is applied as
+            # soon as the boost ends (the master's state change triggers it).
+            self.master_block_pending = key != self._last_master_block_key
+            return
+        self.master_block_pending = False
         self._last_master_block_key = key
 
         if block["mode"] == MODE_OFF:

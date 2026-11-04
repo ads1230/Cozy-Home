@@ -1133,3 +1133,63 @@ async def test_entities_hidden_by_default_and_existing_ones_hidden_once(
     await hass.config_entries.async_reload(config_entry.entry_id)
     await hass.async_block_till_done()
     assert ent_reg.async_get("number.bedroom_offset").hidden_by is None
+
+
+async def test_schedule_waits_for_a_boost_to_finish(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A block boundary during a boost is applied when the boost ends, not during it."""
+    freezer.move_to(_utc(0, 17, 30))  # Monday 17:30, inside the 17:00 block
+    set_master(hass, state="heat", temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+    hub_device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, config_entry.entry_id)})
+    await hass.services.async_call(
+        DOMAIN,
+        "set_schedule",
+        {
+            "device_id": hub_device.id,
+            "schedule": {
+                "all": [
+                    {"time": "17:00", "mode": "fixed", "temperature": 20},
+                    {"time": "22:00", "mode": "off"},
+                ]
+            },
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, MASTER) == []  # already at 20
+    _clear(climate_calls)
+
+    # 21:30: the user boosts the Hive to 22° for an hour
+    freezer.move_to(_utc(0, 21, 30))
+    hass.states.async_set(
+        MASTER,
+        "heat",
+        {"hvac_modes": ["auto", "heat", "off"], "temperature": 22, "preset_mode": "boost"},
+    )
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, BEDROOM) == [20.0]  # rooms follow the boosted target
+    assert hass.states.get("sensor.heating_schedule").attributes["block_pending"] is False
+
+    # 22:00 block boundary: the boost is still running -> nothing sent to the master
+    await _tick(hass, freezer, _utc(0, 22, 0))
+    assert _modes(climate_calls, MASTER) == []
+    assert _temps(climate_calls, MASTER) == []
+    assert hass.states.get("sensor.heating_schedule").attributes["block_pending"] is True
+    await _tick(hass, freezer, _utc(0, 22, 15))
+    assert _modes(climate_calls, MASTER) == []  # still waiting
+
+    # 22:30: the boost ends -> the 22:00 "off" block is applied straight away
+    hass.states.async_set(
+        MASTER,
+        "heat",
+        {"hvac_modes": ["auto", "heat", "off"], "temperature": 20, "preset_mode": "none"},
+    )
+    await hass.async_block_till_done()
+    assert _modes(climate_calls, MASTER) == ["off"]
+    assert hass.states.get("sensor.heating_schedule").attributes["block_pending"] is False

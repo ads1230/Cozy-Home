@@ -115,6 +115,7 @@ class MasterScheduleSensor(CozyHomeEntity, SensorEntity):
             "master_entity": self._controller.master_entity,
             "enabled": self._controller.enabled,
             "resync_minutes": self._controller.resync_minutes,
+            "block_pending": self._controller.master_block_pending,
         }
 
 

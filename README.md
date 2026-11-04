@@ -169,8 +169,11 @@ to move it, ＋/－ add and remove blocks, ⧉ copies a day to other days, then 
 *Remove schedule* hands control back to the thermostat's own schedule.
 
 Turning the thermostat up by hand holds until the next block, exactly like a normal
-thermostat. If you want the schedule re-imposed regardless, set *Re-apply targets every* in
-Configure.
+thermostat. A **boost** is left to finish: if a block starts while the thermostat reports a
+boost, Home Assistant waits and applies that block the moment the boost ends (the schedule
+card says "boost running — the schedule resumes when it ends"). Rooms follow the boosted
+target meanwhile. If you want the schedule re-imposed regardless of manual changes, set
+*Re-apply targets every* in Configure (it also respects a running boost).
 
 ### From an automation or Developer tools
 
