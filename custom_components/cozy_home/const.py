@@ -73,12 +73,19 @@ SERVICE_SET_SCHEDULE: Final = "set_schedule"
 SERVICE_GET_SCHEDULE: Final = "get_schedule"
 SERVICE_CLEAR_SCHEDULE: Final = "clear_schedule"
 SERVICE_SYNC: Final = "sync"
+SERVICE_BOOST: Final = "boost"
+SERVICE_CANCEL_BOOST: Final = "cancel_boost"
+ATTR_TEMPERATURE_FIELD: Final = "temperature"
+ATTR_MINUTES: Final = "minutes"
+DEFAULT_BOOST_MINUTES: Final = 60
+DEFAULT_BOOST_DELTA: Final = 2.0  # boost = current target + this, unless a temperature is given
 
 # Room status values (sensor.<room>_mode)
 STATUS_FOLLOW: Final = "follow"
 STATUS_FIXED: Final = "fixed"
 STATUS_OFF: Final = "off"
 STATUS_FROST: Final = "frost"
+STATUS_BOOST: Final = "boost"
 STATUS_HOLD: Final = "hold"
 STATUS_DISABLED: Final = "disabled"
 STATUS_UNAVAILABLE: Final = "unavailable"
@@ -87,6 +94,7 @@ STATUSES: Final = (
     STATUS_FIXED,
     STATUS_OFF,
     STATUS_FROST,
+    STATUS_BOOST,
     STATUS_HOLD,
     STATUS_DISABLED,
     STATUS_UNAVAILABLE,

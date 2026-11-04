@@ -8,10 +8,11 @@
  *   title: Heating          # optional heading; omit for the thermostat's name only
  *   show_schedule: true     # the schedule line
  *   show_controls: false    # −/+ target buttons (off by default: the schedule drives the target)
+ *   show_boost: true        # the Boost button (hold a temperature for a while, then resume)
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.9.1"; // kept in step with manifest.json
+  const VERSION = "0.9.2"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>
@@ -19,13 +20,26 @@
   const num = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
   const bad = (st) => !st || st.state === "unavailable" || st.state === "unknown";
 
+  const fmtUntil = (iso, hass) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "?";
+    const tz = hass && hass.config && hass.config.time_zone;
+    try {
+      return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: tz }).format(d);
+    } catch (err) {
+      return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
+    }
+  };
+
   class CozyHomeMasterCard extends HTMLElement {
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
       this._config = {};
       this._busy = false;
+      this._boostForm = null; // { key, temperature, minutes } while the chooser is open
       this.shadowRoot.addEventListener("click", (e) => this._onClick(e));
+      this.shadowRoot.addEventListener("change", (e) => this._onChange(e));
     }
 
     static getStubConfig() {
@@ -82,8 +96,9 @@
         this._climateId,
         c && [c.state, c.attributes.current_temperature, c.attributes.temperature, c.attributes.hvac_action,
           c.attributes.friendly_name, c.attributes.preset_mode, c.attributes.min_temp, c.attributes.max_temp],
-        h && [h.state, h.attributes.enabled],
+        h && [h.state, h.attributes.enabled, h.attributes.boost, h.attributes.block_pending],
         this._busy,
+        this._boostForm,
       ]);
     }
 
@@ -125,8 +140,66 @@
         this._setTarget(-1);
       } else if (action === "up") {
         this._setTarget(1);
+      } else if (action === "boost-open") {
+        const c = this._climate;
+        const base = c && c.attributes.temperature != null ? Number(c.attributes.temperature) : 20;
+        this._boostForm = { key: "master", temperature: Math.round((base + 2) * 2) / 2, minutes: 60 };
+        this._render();
+      } else if (action === "boost-close") {
+        this._boostForm = null;
+        this._render();
+      } else if (action === "boost-inc" || action === "boost-dec") {
+        if (!this._boostForm) return;
+        const dir = action === "boost-inc" ? 0.5 : -0.5;
+        this._boostForm.temperature = Math.min(35, Math.max(5, this._boostForm.temperature + dir));
+        this._render();
+      } else if (action === "boost-start") {
+        if (!this._boostForm || !this._hub) return;
+        const f = this._boostForm;
+        this._boostForm = null;
+        this._busy = true;
+        this._render();
+        this._hass
+          .callService(DOMAIN, "boost", { entity_id: this._hub.entity_id, temperature: f.temperature, minutes: f.minutes })
+          .catch((err) => console.error("cozy-home-master-card", err))
+          .finally(() => { this._busy = false; this._render(); });
+      } else if (action === "boost-cancel") {
+        e.preventDefault();
+        if (!this._hub) return;
+        this._hass.callService(DOMAIN, "cancel_boost", { entity_id: this._hub.entity_id }).catch((err) => console.error(err));
       }
     }
+
+    _onChange(e) {
+      const el = e.target;
+      if (el.dataset.role === "boost-minutes" && this._boostForm) this._boostForm.minutes = Number(el.value);
+    }
+
+    _boostFormHTML(key) {
+      const f = this._boostForm;
+      if (!f || f.key !== key) return "";
+      return `
+        <div class="boostform">
+          <span class="lbl2">Boost to</span>
+          <button class="round sm" data-action="boost-dec" data-key="${esc(key)}">−</button>
+          <span class="val">${esc(num(f.temperature))}°</span>
+          <button class="round sm" data-action="boost-inc" data-key="${esc(key)}">+</button>
+          <span class="lbl2">for</span>
+          <select data-role="boost-minutes" data-key="${esc(key)}">
+            ${[30, 60, 90, 120, 180, 240].map((m) => `<option value="${m}" ${f.minutes === m ? "selected" : ""}>${m < 60 ? m + " min" : m / 60 + " h" + (m % 60 ? " " + (m % 60) + " min" : "")}</option>`).join("")}
+          </select>
+          <button class="pill primary" data-action="boost-start" data-key="${esc(key)}">Start</button>
+          <button class="pill" data-action="boost-close">Cancel</button>
+        </div>`;
+    }
+
+    _boostStatusHTML(key, boost, entityId) {
+      if (!boost) return "";
+      const until = fmtUntil(boost.until, this._hass);
+      return `<div class="boosting"><ha-icon icon="mdi:rocket-launch"></ha-icon>Boosting to ${esc(num(Number(boost.temperature)))}° until ${esc(until)}
+        <a href="#" class="link" data-action="boost-cancel" data-key="${esc(key)}" data-entity="${esc(entityId)}">cancel</a></div>`;
+    }
+
 
     _render() {
       if (!this._hass) return;
@@ -175,6 +248,17 @@
           ? `<div class="sched"><ha-icon icon="mdi:calendar-clock"></ha-icon>Schedule: ${esc(schedText)}</div>`
           : "";
       const disabled = this._enabled ? "" : `<div class="warn"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>Cozy Home is disabled — rooms aren't being controlled</div>`;
+      const boost = hub.attributes.boost;
+      const thermostatBoost = String(a.preset_mode || "").toLowerCase() === "boost" && !boost;
+      const boostLine = boost
+        ? this._boostStatusHTML("master", boost, this._hub.entity_id)
+        : thermostatBoost
+          ? `<div class="boosting"><ha-icon icon="mdi:rocket-launch"></ha-icon>Boost running (started on the thermostat)</div>`
+          : "";
+      const boostButton =
+        this._config.show_boost !== false && !boost && !thermostatBoost && !this._boostForm // boosting from Off works too
+          ? `<button class="boostbtn" data-action="boost-open" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:rocket-launch-outline"></ha-icon>Boost</button>`
+          : "";
       const controls = this._config.show_controls
         ? `<div class="controls">
             <button class="round" data-action="down" ${this._busy || off ? "disabled" : ""} title="Lower the target">−</button>
@@ -198,7 +282,11 @@
             <div class="status ${statusClass}"><ha-icon icon="${statusIcon}"></ha-icon><span>${statusText}</span></div>
             ${controls}
           </div>
+          <span class="spacer"></span>
+          ${boostButton}
         </div>
+        ${this._boostFormHTML("master")}
+        ${boostLine}
         ${scheduleLine}
         ${disabled}`;
     }
@@ -233,6 +321,23 @@
     button:disabled { opacity: 0.4; cursor: default; }
     .round { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--ch-follow); background: transparent;
       color: var(--ch-follow); font-size: 20px; line-height: 1; padding: 0; }
+    .spacer { flex: 1; }
+
+    .boostform { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 8px 10px;
+      border-radius: 8px; background: var(--secondary-background-color, rgba(0,0,0,0.04)); }
+    .boostform .lbl2 { color: var(--secondary-text-color); font-size: 0.9em; }
+    .boostform select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, #ddd); border-radius: 8px; padding: 4px 8px; }
+    .boostform .val { min-width: 3em; text-align: center; font-weight: 500; }
+    .boosting { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--ch-follow); font-size: 0.95em; --mdc-icon-size: 18px; }
+    .boosting .link { color: var(--secondary-text-color); font-size: 0.9em; margin-left: 4px; }
+    .boostbtn { height: 30px; padding: 0 12px; border-radius: 15px; border: 1.5px solid var(--ch-follow); background: transparent;
+      color: var(--ch-follow); display: inline-flex; align-items: center; gap: 4px; --mdc-icon-size: 16px; font-size: 0.9em; }
+    .round.sm { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--ch-follow); background: transparent;
+      color: var(--ch-follow); font-size: 16px; line-height: 1; padding: 0; }
+    .pill { height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid var(--divider-color, #ddd);
+      background: transparent; color: var(--primary-text-color); }
+    .pill.primary { background: var(--ch-follow); border-color: var(--ch-follow); color: #fff; }
     .sched, .warn { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--secondary-text-color);
       font-size: 0.9em; --mdc-icon-size: 18px; }
     .warn { color: var(--warning-color, #b26a00); }

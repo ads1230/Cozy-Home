@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -67,6 +68,7 @@ from .const import (
     CONF_OFF_MODE,
     CONF_OFFSET,
     CONF_RESYNC_MINUTES,
+    DEFAULT_BOOST_DELTA,
     DEFAULT_FROST_TEMPERATURE,
     DEFAULT_MASTER_OFF,
     DEFAULT_OFF_BELOW,
@@ -88,6 +90,7 @@ from .const import (
     REASON_ROOM_DISABLED,
     REASON_ROOM_UNAVAILABLE,
     REASON_SCHEDULE,
+    STATUS_BOOST,
     STATUS_DISABLED,
     STATUS_FIXED,
     STATUS_FOLLOW,
@@ -116,6 +119,42 @@ class Command:
 
 
 @dataclass
+class Boost:
+    """A Cozy Home boost: hold ``temperature`` until ``until`` (UTC)."""
+
+    temperature: float
+    until: datetime
+    # What the master was doing before (restored when there is no HA schedule)
+    previous_target: float | None = None
+    previous_hvac_mode: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "temperature": self.temperature,
+            "until": self.until.isoformat(),
+            "previous_target": self.previous_target,
+            "previous_hvac_mode": self.previous_hvac_mode,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> Boost | None:
+        if not data:
+            return None
+        until = dt_util.parse_datetime(str(data.get("until", "")))
+        if until is None:
+            return None
+        return cls(
+            temperature=float(data["temperature"]),
+            until=dt_util.as_utc(until),
+            previous_target=data.get("previous_target"),
+            previous_hvac_mode=data.get("previous_hvac_mode"),
+        )
+
+    def active(self, now: datetime | None = None) -> bool:
+        return (now or dt_util.utcnow()) < self.until
+
+
+@dataclass
 class RoomState:
     """Settings and computed state for one room."""
 
@@ -140,6 +179,7 @@ class RoomState:
     last_command: Command | None = None
     last_synced: datetime | None = None
     applied: dict[str, float | str] = field(default_factory=dict)  # per thermostat
+    boost: Boost | None = None
 
 
 def _is_bad(state: State | None) -> bool:
@@ -169,6 +209,7 @@ class HeatingController:
         self.resync_minutes = int(entry.options.get(CONF_RESYNC_MINUTES, DEFAULT_RESYNC_MINUTES))
         self.master_active_block: tuple[str, Block] | None = None
         self.master_block_pending = False  # a block is due but a boost is running
+        self.master_boost: Boost | None = None  # a Cozy Home boost on the master
         self.entities_hidden_once = False  # one-time hide of pre-0.8.1 entities done
         self._last_resync: datetime | None = None
         self._ready = False  # no pushes until Home Assistant has fully started
@@ -198,6 +239,9 @@ class HeatingController:
                 self.entry, options={**self.entry.options, CONF_ENABLED: self.enabled}
             )
         self.master_schedule = normalize(stored.get("master_schedule"))
+        self.master_boost = Boost.from_dict(stored.get("master_boost"))
+        if self.master_boost and not self.master_boost.active():
+            self.master_boost = None
         stored_rooms: dict[str, dict[str, Any]] = stored.get("rooms", {})
 
         for subentry_id, subentry in self.entry.subentries.items():
@@ -230,7 +274,11 @@ class HeatingController:
                 ),
                 enabled=bool(saved.get("enabled", True)),
                 schedule=normalize(saved.get("schedule")),
+                boost=Boost.from_dict(saved.get("boost")),
             )
+            room = self.rooms[subentry_id]
+            if room.boost and not room.boost.active():
+                room.boost = None
 
         if migrate_enabled:
             await self._store.async_save(self._data_to_save())  # drop the old key now
@@ -300,6 +348,7 @@ class HeatingController:
         return {
             "entities_hidden": self.entities_hidden_once,
             "master_schedule": self.master_schedule,
+            "master_boost": self.master_boost.as_dict() if self.master_boost else None,
             "rooms": {
                 room.subentry_id: {
                     "offset": room.offset,
@@ -309,6 +358,7 @@ class HeatingController:
                     "frost_temperature": room.frost_temperature,
                     "enabled": room.enabled,
                     "schedule": room.schedule,
+                    "boost": room.boost.as_dict() if room.boost else None,
                 }
                 for room in self.rooms.values()
             },
@@ -385,6 +435,124 @@ class HeatingController:
         self._mark_dirty()
         await self.async_sync_all()
 
+    # ------------------------------------------------------------------ boost
+
+    def _boost_temperature(self, state: State, temperature: float | None) -> float:
+        if temperature is not None:
+            return float(temperature)
+        current = state.attributes.get(ATTR_TEMPERATURE)
+        base = float(current) if current is not None else DEFAULT_BOOST_DELTA * 9
+        return self._clamp(state, base + DEFAULT_BOOST_DELTA)
+
+    async def async_boost_master(self, temperature: float | None, minutes: int) -> Boost:
+        """Hold the master at a temperature for a while, then resume."""
+        state = self.hass.states.get(self.master_entity)
+        if _is_bad(state):
+            raise HomeAssistantError(f"{self.master_entity} is unavailable")
+        assert state is not None
+        previous = self.master_boost
+        boost = Boost(
+            temperature=self._clamp(state, self._boost_temperature(state, temperature)),
+            until=dt_util.utcnow() + timedelta(minutes=minutes),
+            previous_target=(
+                previous.previous_target
+                if previous
+                else (
+                    float(state.attributes[ATTR_TEMPERATURE])
+                    if state.attributes.get(ATTR_TEMPERATURE) is not None
+                    else None
+                )
+            ),
+            previous_hvac_mode=previous.previous_hvac_mode if previous else state.state,
+        )
+        self.master_boost = boost
+        self._mark_dirty()
+        await self._async_apply_to(
+            self.master_entity,
+            Command(hvac_off=False, temperature=boost.temperature),
+            label="master boost",
+            force_manual=True,
+        )
+        self._notify()
+        return boost
+
+    async def async_cancel_master_boost(self) -> None:
+        """End a master boost now and resume the schedule / previous setting."""
+        boost = self.master_boost
+        if boost is None:
+            return
+        self.master_boost = None
+        self._mark_dirty()
+        if self.master_schedule:
+            self._last_master_block_key = None
+            await self.async_sync_all(force=True)
+            return
+        state = self.hass.states.get(self.master_entity)
+        if not _is_bad(state):
+            assert state is not None
+            try:
+                if boost.previous_hvac_mode and boost.previous_hvac_mode != state.state:
+                    await self._call(
+                        SERVICE_SET_HVAC_MODE,
+                        {
+                            ATTR_ENTITY_ID: self.master_entity,
+                            ATTR_HVAC_MODE: boost.previous_hvac_mode,
+                        },
+                    )
+                if boost.previous_target is not None and boost.previous_hvac_mode != HVACMode.OFF:
+                    await self._call(
+                        SERVICE_SET_TEMPERATURE,
+                        {
+                            ATTR_ENTITY_ID: self.master_entity,
+                            ATTR_TEMPERATURE: boost.previous_target,
+                        },
+                    )
+            except HomeAssistantError as err:
+                _LOGGER.warning("Could not restore %s after boost: %s", self.master_entity, err)
+        self._notify()
+
+    async def async_boost_room(
+        self, subentry_id: str, temperature: float | None, minutes: int
+    ) -> Boost:
+        """Hold a room at a temperature for a while, then go back to following."""
+        room = self.rooms[subentry_id]
+        if not self.enabled or not room.enabled:
+            raise HomeAssistantError(f"{room.name} is not being controlled (follow master is off)")
+        state = next(
+            (st for e in room.climate_entities if not _is_bad(st := self.hass.states.get(e))), None
+        )
+        if state is None:
+            raise HomeAssistantError(f"{room.name}: no thermostat is available")
+        if temperature is None:
+            base = room.target if room.target is not None else room.master_target
+            if base is None:
+                base = float(state.attributes.get(ATTR_TEMPERATURE) or 18)
+            temperature = base + DEFAULT_BOOST_DELTA
+        room.boost = Boost(
+            temperature=round(float(temperature) * 2) / 2,
+            until=dt_util.utcnow() + timedelta(minutes=minutes),
+        )
+        self._mark_dirty()
+        await self.async_sync_room(subentry_id, force=True)
+        return room.boost
+
+    async def async_cancel_room_boost(self, subentry_id: str) -> None:
+        room = self.rooms[subentry_id]
+        if room.boost is None:
+            return
+        room.boost = None
+        self._mark_dirty()
+        await self.async_sync_room(subentry_id, force=True)
+
+    async def _async_expire_boosts(self, now: datetime) -> None:
+        if self.master_boost and not self.master_boost.active(now):
+            _LOGGER.info("Master boost finished")
+            await self.async_cancel_master_boost()
+        for room in list(self.rooms.values()):
+            if room.boost and not room.boost.active(now):
+                _LOGGER.info("Boost finished in %s", room.name)
+                await self.async_cancel_room_boost(room.subentry_id)
+
     # ------------------------------------------------------------------ events
 
     async def _async_state_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -407,6 +575,7 @@ class HeatingController:
     async def _async_minute_tick(self, now: datetime) -> None:
         if not self._ready:
             return
+        await self._async_expire_boosts(now)
         # Normally only changes are pushed. With a re-sync interval set, targets
         # are re-applied periodically so a thermostat that drifted back to its
         # own schedule is corrected (nothing is sent if it already matches).
@@ -470,6 +639,11 @@ class HeatingController:
         if room_state is None:
             room.status, room.reason = STATUS_UNAVAILABLE, REASON_ROOM_UNAVAILABLE
             return None
+
+        if room.boost and room.boost.active():
+            room.status, room.reason = STATUS_BOOST, None
+            room.target = self._clamp(room_state, room.boost.temperature)
+            return Command(hvac_off=False, temperature=room.boost.temperature)
 
         found = active_block(room.schedule, dt_util.now())
         if found is not None:
@@ -634,7 +808,7 @@ class HeatingController:
             self.master_block_pending = False
             return
         assert state is not None
-        if is_boosted(state):
+        if is_boosted(state) or (self.master_boost and self.master_boost.active()):
             # Let a boost run its course. The block that is due is applied as
             # soon as the boost ends (the master's state change triggers it).
             self.master_block_pending = key != self._last_master_block_key

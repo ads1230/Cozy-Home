@@ -1193,3 +1193,200 @@ async def test_schedule_waits_for_a_boost_to_finish(
     await hass.async_block_till_done()
     assert _modes(climate_calls, MASTER) == ["off"]
     assert hass.states.get("sensor.heating_schedule").attributes["block_pending"] is False
+
+
+async def test_virtual_boost_on_master_with_schedule(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A Cozy Home boost holds the master, defers a due block, then the schedule resumes."""
+    freezer.move_to(_utc(0, 21, 0))
+    set_master(hass, state="heat", temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+    hub_device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, config_entry.entry_id)})
+    await hass.services.async_call(
+        DOMAIN,
+        "set_schedule",
+        {
+            "device_id": hub_device.id,
+            "schedule": {
+                "all": [
+                    {"time": "17:00", "mode": "fixed", "temperature": 20},
+                    {"time": "22:00", "mode": "off"},
+                ]
+            },
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    _clear(climate_calls)
+
+    # Boost: default = current target + 2 for 90 minutes
+    await hass.services.async_call(
+        DOMAIN, "boost", {"device_id": hub_device.id, "minutes": 90}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, MASTER) == [22.0]
+    hub = hass.states.get("sensor.heating_schedule")
+    assert hub.attributes["boost"]["temperature"] == 22.0
+    assert hub.attributes["boost"]["until"].startswith("2026-11-02T22:30")
+
+    # The master applies it -> rooms follow the boosted target
+    set_master(hass, state="heat", temperature=22)
+    await hass.async_block_till_done()
+    assert _temps(climate_calls, BEDROOM) == [20.0]
+
+    # 22:00 block boundary: waiting for the boost
+    await _tick(hass, freezer, _utc(0, 22, 0))
+    assert _modes(climate_calls, MASTER) == []
+    assert hass.states.get("sensor.heating_schedule").attributes["block_pending"] is True
+
+    # 22:30: the boost expires -> the 22:00 "off" block is applied
+    await _tick(hass, freezer, _utc(0, 22, 30))
+    assert _modes(climate_calls, MASTER) == ["off"]
+    assert hass.states.get("sensor.heating_schedule").attributes["boost"] is None
+
+
+async def test_virtual_boost_on_master_without_schedule_restores_previous(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Without an HA schedule a master boost puts the thermostat back how it was."""
+    freezer.move_to(_utc(0, 9, 0))
+    set_master(hass, state="auto", temperature=19)  # Hive running its own schedule
+    set_trv(hass, BEDROOM, temperature=17)
+    await setup_integration(hass, config_entry)
+    _clear(climate_calls)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "boost",
+        {"entity_id": "sensor.heating_schedule", "temperature": 23, "minutes": 30},
+        blocking=True,
+    )
+    assert _modes(climate_calls, MASTER) == ["heat"]  # manual for the boost
+    assert _temps(climate_calls, MASTER) == [23.0]
+    set_master(hass, state="heat", temperature=23)
+    await hass.async_block_till_done()
+
+    _clear(climate_calls)
+    await hass.services.async_call(
+        DOMAIN, "cancel_boost", {"entity_id": "sensor.heating_schedule"}, blocking=True
+    )
+    # Back to auto (its own schedule) at the previous target
+    assert _modes(climate_calls, MASTER) == ["auto"]
+    assert _temps(climate_calls, MASTER) == [19.0]
+
+
+async def test_virtual_boost_on_a_room(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A room boost holds that room only, ignores the cut-off, and ends on time."""
+    freezer.move_to(_utc(0, 9, 0))
+    set_master(hass, temperature=7)  # master at frost -> room would normally be off
+    set_trv(hass, BEDROOM, state="off", temperature=18)
+    await setup_integration(hass, config_entry)
+    assert _modes(climate_calls) == []  # already off (fixture pins off action = off)
+    _clear(climate_calls)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "boost",
+        {"device_id": room_device_id(hass, "bedroom_sub"), "temperature": 21, "minutes": 60},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert _modes(climate_calls) == ["heat"]
+    assert _temps(climate_calls) == [21.0]
+    assert hass.states.get("sensor.bedroom_mode").state == "boost"
+    assert hass.states.get("sensor.bedroom_target_temperature").state == "21.0"
+    assert (
+        hass.states.get("sensor.bedroom_target_temperature").attributes["boost"]["temperature"]
+        == 21.0
+    )
+    assert _temps(climate_calls, MASTER) == []  # the master is untouched
+
+    # Survives a reload (persisted)
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.bedroom_mode").state == "boost"
+
+    # Expires after an hour -> back to normal (below cut-off -> off)
+    set_trv(hass, BEDROOM, state="heat", temperature=21)
+    _clear(climate_calls)
+    await _tick(hass, freezer, _utc(0, 10, 0))
+    assert _modes(climate_calls) == ["off"]
+    assert hass.states.get("sensor.bedroom_mode").state == "off"
+    assert hass.states.get("sensor.bedroom_target_temperature").attributes["boost"] is None
+
+
+async def test_virtual_boost_from_off_heats_then_switches_back_off(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    climate_calls,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Boosting while the master is off heats for the duration, then goes back off.
+
+    The rooms follow along: they heat (master + offset) during the boost and
+    return to their master-off behaviour afterwards.
+    """
+    freezer.move_to(_utc(0, 9, 0))
+    set_master(hass, state="off", temperature=20)
+    set_trv(hass, BEDROOM, state="off", temperature=18)
+    await setup_integration(hass, config_entry)
+    _clear(climate_calls)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "boost",
+        {"entity_id": "sensor.heating_schedule", "temperature": 22, "minutes": 60},
+        blocking=True,
+    )
+    assert _modes(climate_calls, MASTER) == ["heat"]
+    assert _temps(climate_calls, MASTER) == [22.0]
+    boost = hass.states.get("sensor.heating_schedule").attributes["boost"]
+    assert boost["temperature"] == 22.0 and boost["until"].startswith("2026-11-02T10:00:00")
+    # The thermostat applies it -> the room follows (fixture offset -2)
+    set_master(hass, state="heat", temperature=22)
+    await hass.async_block_till_done()
+    assert _modes(climate_calls) == ["heat"]
+    assert _temps(climate_calls) == [20.0]
+    set_trv(hass, BEDROOM, state="heat", temperature=20)
+    await hass.async_block_till_done()
+
+    # An hour later the boost ends: master back to off, room back to its master-off action
+    _clear(climate_calls)
+    await _tick(hass, freezer, _utc(0, 10, 0))
+    assert _modes(climate_calls, MASTER) == ["off"]
+    assert _temps(climate_calls, MASTER) == []  # no target to restore while off
+    assert hass.states.get("sensor.heating_schedule").attributes["boost"] is None
+    set_master(hass, state="off", temperature=22)
+    await hass.async_block_till_done()
+    assert _modes(climate_calls) == ["off"]
+
+
+async def test_room_boost_refused_when_not_following(
+    hass: HomeAssistant, config_entry: MockConfigEntry, climate_calls
+) -> None:
+    import pytest
+    from homeassistant.exceptions import ServiceValidationError
+
+    set_master(hass, temperature=20)
+    set_trv(hass, BEDROOM, temperature=18)
+    await setup_integration(hass, config_entry)
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.bedroom_follow_master"}, blocking=True
+    )
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "boost", {"device_id": room_device_id(hass, "bedroom_sub")}, blocking=True
+        )

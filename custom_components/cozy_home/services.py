@@ -15,15 +15,20 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
     ATTR_DEVICE_ID,
+    ATTR_MINUTES,
     ATTR_SCHEDULE,
+    ATTR_TEMPERATURE_FIELD,
+    DEFAULT_BOOST_MINUTES,
     DOMAIN,
+    SERVICE_BOOST,
+    SERVICE_CANCEL_BOOST,
     SERVICE_CLEAR_SCHEDULE,
     SERVICE_GET_SCHEDULE,
     SERVICE_SET_SCHEDULE,
@@ -58,6 +63,21 @@ SYNC_SCHEMA = vol.Schema(
         vol.Optional(ATTR_DEVICE_ID): cv.string,
         vol.Optional(ATTR_ENTITY_ID): cv.entity_id,
     }
+)
+BOOST_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_DEVICE_ID): cv.string,
+            vol.Optional(ATTR_ENTITY_ID): cv.entity_id,
+            vol.Optional(ATTR_TEMPERATURE_FIELD): vol.All(
+                vol.Coerce(float), vol.Range(min=5, max=35)
+            ),
+            vol.Optional(ATTR_MINUTES, default=DEFAULT_BOOST_MINUTES): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=24 * 60)
+            ),
+        }
+    ),
+    cv.has_at_least_one_key(ATTR_DEVICE_ID, ATTR_ENTITY_ID),
 )
 
 
@@ -147,6 +167,31 @@ def async_setup_services(hass: HomeAssistant) -> None:
         else:
             await controller.async_sync_room(room_id, force=True)
 
+    async def boost(call: ServiceCall) -> None:
+        controller, room_id = _resolve(hass, call.data)
+        temperature = call.data.get(ATTR_TEMPERATURE_FIELD)
+        minutes = call.data[ATTR_MINUTES]
+        try:
+            if room_id is None:
+                await controller.async_boost_master(temperature, minutes)
+            else:
+                await controller.async_boost_room(room_id, temperature, minutes)
+        except HomeAssistantError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="boost_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    async def cancel_boost(call: ServiceCall) -> None:
+        controller, room_id = _resolve(hass, call.data)
+        if room_id is None:
+            await controller.async_cancel_master_boost()
+        else:
+            await controller.async_cancel_room_boost(room_id)
+
+    hass.services.async_register(DOMAIN, SERVICE_BOOST, boost, schema=BOOST_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_CANCEL_BOOST, cancel_boost, schema=TARGET_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_SET_SCHEDULE, set_schedule, schema=SET_SCHEDULE_SCHEMA
     )

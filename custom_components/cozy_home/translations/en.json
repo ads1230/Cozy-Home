@@ -158,7 +158,8 @@
           "frost": "Frost protection",
           "hold": "Holding (master off)",
           "disabled": "Disabled",
-          "unavailable": "Unavailable"
+          "unavailable": "Unavailable",
+          "boost": "Boosting"
         }
       }
     }
@@ -223,6 +224,42 @@
           "description": "Only the room (or hub) this schedule sensor belongs to. Leave both empty to sync everything."
         }
       }
+    },
+    "boost": {
+      "name": "Boost",
+      "description": "Hold the master thermostat (hub device) or a room at a temperature for a while, then go back to the schedule / following. Works with any thermostat, boost function or not.",
+      "fields": {
+        "device_id": {
+          "name": "Room",
+          "description": "The room to boost, or the hub device for the master thermostat (or give the entity instead)."
+        },
+        "entity_id": {
+          "name": "Entity",
+          "description": "Alternatively, the room's target sensor or the hub's schedule sensor."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target during the boost. Leave empty for 2° above the current target."
+        },
+        "minutes": {
+          "name": "Duration",
+          "description": "How long the boost lasts (default 60 minutes)."
+        }
+      }
+    },
+    "cancel_boost": {
+      "name": "Cancel boost",
+      "description": "End a running boost now.",
+      "fields": {
+        "device_id": {
+          "name": "Room",
+          "description": "The room, or the hub device for the master thermostat."
+        },
+        "entity_id": {
+          "name": "Entity",
+          "description": "Alternatively, the room's target sensor or the hub's schedule sensor."
+        }
+      }
     }
   },
   "exceptions": {
@@ -231,6 +268,9 @@
     },
     "invalid_schedule": {
       "message": "Invalid schedule: {error}"
+    },
+    "boost_failed": {
+      "message": "Could not boost: {error}"
     }
   },
   "options": {

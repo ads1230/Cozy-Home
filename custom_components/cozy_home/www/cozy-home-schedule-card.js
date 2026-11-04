@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.9.1"; // kept in step with manifest.json
+  const VERSION = "0.9.2"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -169,7 +169,7 @@
         (() => {
           const c = sched && sched.attributes.master_entity && states[sched.attributes.master_entity];
           return c ? [c.state, c.attributes.hvac_modes, c.attributes.preset_mode, c.attributes.current_temperature,
-            c.attributes.temperature, sched.attributes.block_pending] : null;
+            c.attributes.temperature, sched.attributes.block_pending, sched.attributes.boost] : null;
         })(),
         this._hass.config && this._hass.config.time_zone,
       ]);
@@ -576,7 +576,8 @@
         const climate = sched && sched.attributes.master_entity && states[sched.attributes.master_entity];
         const now = sched && !/^(unknown|unavailable)$/.test(sched.state) ? sched.state : "";
         const cur = climate && climate.attributes.current_temperature != null ? ` · thermostat ${esc(num(Number(climate.attributes.current_temperature)))}° → ${esc(num(Number(climate.attributes.temperature)))}°` : "";
-        const boosted = climate && String(climate.attributes.preset_mode || "").toLowerCase() === "boost";
+        const virtual = sched && sched.attributes.boost; // a Cozy Home boost (see the thermostat card)
+        const boosted = virtual || (climate && String(climate.attributes.preset_mode || "").toLowerCase() === "boost");
         const boost = boosted
           ? sched && sched.attributes.block_pending
             ? " · boost running — the schedule resumes when it ends"

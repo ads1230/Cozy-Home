@@ -18,6 +18,7 @@ from .const import (
     STATUSES,
     SUBENTRY_TYPE_ROOM,
 )
+from .controller import Boost
 from .entity import CozyHomeEntity, CozyHomeRoomEntity
 from .schedule import Block, describe_block, summarize
 
@@ -41,6 +42,12 @@ async def async_setup_entry(
             ],
             config_subentry_id=subentry.subentry_id,
         )
+
+
+def _boost_attr(boost: Boost | None) -> dict[str, Any] | None:
+    if boost is None or not boost.active():
+        return None
+    return {"temperature": boost.temperature, "until": boost.until.isoformat()}
 
 
 def _schedule_attributes(
@@ -116,6 +123,7 @@ class MasterScheduleSensor(CozyHomeEntity, SensorEntity):
             "enabled": self._controller.enabled,
             "resync_minutes": self._controller.resync_minutes,
             "block_pending": self._controller.master_block_pending,
+            "boost": _boost_attr(self._controller.master_boost),
         }
 
 
@@ -144,6 +152,7 @@ class RoomTargetSensor(CozyHomeRoomEntity, SensorEntity):
             "reason": room.reason,
             "thermostats": list(room.climate_entities),
             "applied": dict(room.applied),
+            "boost": _boost_attr(room.boost),
             "master_target": room.master_target,
             "offset": room.offset,
             "off_below": room.off_below,

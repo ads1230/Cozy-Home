@@ -88,9 +88,10 @@ whole integration rather than a room:
 Edit a dashboard → **Add card** → *Cozy Home Thermostat*, or `type: custom:cozy-home-master-card`.
 The master (boiler) thermostat at a glance: the current temperature large, whether it is
 **heating**, idle or off, the target, and what the heating schedule is doing (shown only when
-Home Assistant has a schedule). Options: `title`, `show_schedule: false`, and
-`show_controls: true` to add −/+ buttons that nudge the target (off by default — the schedule
-drives the target; a nudge holds until the next block, like turning the thermostat by hand).
+Home Assistant has a schedule), plus a **Boost** button (see [Boost](#boost)). Options:
+`title`, `show_schedule: false`, `show_boost: false`, and `show_controls: true` to add −/+
+buttons that nudge the target (off by default — the schedule drives the target; a nudge holds
+until the next block, like turning the thermostat by hand).
 
 ## The rooms card
 
@@ -103,12 +104,40 @@ type: custom:cozy-home-rooms-card
 # rooms: [sensor.upstairs_target_temperature, sensor.bedroom_target_temperature]   # only these, in this order
 # show_thermostats: true
 # show_master: true    # also show the master row (off by default; the thermostat card does that)
+# show_boost: false    # hide the per-room Boost buttons
 ```
 
 It shows every room: the room's temperature (average of its radiators) → target, what it is doing and why ("Following master",
 "Off · below cut-off", "Frost protection · schedule"…), an offset −/+ control, the *Follow
-master* toggle, and the radiators it controls with their own temperature and setpoint. Tap a
-radiator for its dialog, tap a room name for its device page.
+master* toggle, a 🚀 **Boost** button, and the radiators it controls with their own temperature
+and setpoint. Tap a radiator for its dialog, tap a room name for its device page.
+
+## Boost
+
+Most TRVs (and some boiler thermostats) have no boost function, so Cozy Home provides one that
+works with any thermostat. **Boost** on the thermostat card holds the master at a temperature
+for a while (default: 2° above the current target, for an hour — pick any temperature and 30
+minutes to 4 hours in the chooser); all the rooms follow it with their offsets as usual. The
+🚀 button on a room boosts just that room, even if it is currently off below its cut-off. The
+card shows *Boosting to 22° until 18:30* with a *cancel* link while it runs.
+
+When the boost ends (or you cancel it) everything goes back to normal: the master resumes the
+heating schedule — or, if the thermostat runs its own schedule, it is put back to the mode and
+target it had before, including *off* if you boosted from off — and a room goes back to
+following the master. A boost survives a Home Assistant restart. If the thermostat has a boost
+of its own (Hive does), use whichever you like: Cozy Home sees the thermostat's boost too and
+waits for it before applying the next schedule block.
+
+From an automation: `cozy_home.boost` with the hub's schedule entity or a room's target entity
+(or the device), optional `temperature` and `minutes`; `cozy_home.cancel_boost` ends it.
+
+```yaml
+action: cozy_home.boost
+data:
+  entity_id: sensor.cozy_home_schedule   # the hub; or sensor.<room>_target_temperature for one room
+  temperature: 22
+  minutes: 90
+```
 
 ## How it decides what a room should do
 
@@ -218,6 +247,8 @@ precedence over following the master for that room.
 | `cozy_home.get_schedule` | `device_id` or `entity_id` | Returns `schedule` and `active` block |
 | `cozy_home.clear_schedule` | `device_id` or `entity_id` | Remove the schedule |
 | `cozy_home.sync` | `device_id` / `entity_id` (optional) | Recompute and push now, even if unchanged |
+| `cozy_home.boost` | `device_id` or `entity_id`, `temperature` (optional), `minutes` (default 60) | Hold the master (hub) or a room at a temperature for a while |
+| `cozy_home.cancel_boost` | `device_id` or `entity_id` | End a running boost now |
 
 ## Notes
 

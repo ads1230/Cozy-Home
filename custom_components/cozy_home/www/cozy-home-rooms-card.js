@@ -10,12 +10,14 @@
  *   rooms: [sensor.bedroom_schedule, ...]   # only these rooms, in this order
  *   show_thermostats: true                   # list each room's radiators
  *   show_master: false       # the master thermostat has its own card (cozy-home-master-card)
+ *   show_boost: true         # per-room Boost buttons
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.9.1"; // kept in step with manifest.json
+  const VERSION = "0.9.2"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-rooms-card";
   const MODE_TEXT = {
+    boost: "Boosting",
     follow: "Following master",
     fixed: "Fixed by schedule",
     off: "Off",
@@ -25,6 +27,7 @@
     unavailable: "Unavailable",
   };
   const MODE_ICON = {
+    boost: "mdi:rocket-launch",
     follow: "mdi:home-thermometer-outline",
     fixed: "mdi:calendar-clock",
     off: "mdi:power-off",
@@ -50,13 +53,26 @@
   const signed = (v) => (v > 0 ? `+${num(v)}°` : v < 0 ? `−${num(-v)}°` : "±0°");
   const bad = (st) => !st || st.state === "unavailable" || st.state === "unknown";
 
+  const fmtUntil = (iso, hass) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "?";
+    const tz = hass && hass.config && hass.config.time_zone;
+    try {
+      return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: tz }).format(d);
+    } catch (err) {
+      return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
+    }
+  };
+
   class CozyHomeRoomsCard extends HTMLElement {
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
       this._config = {};
       this._busy = new Set();
+      this._boostForm = null; // { key: deviceId, temperature, minutes } while a chooser is open
       this.shadowRoot.addEventListener("click", (e) => this._onClick(e));
+      this.shadowRoot.addEventListener("change", (e) => this._onChange(e));
     }
 
     static getStubConfig() {
@@ -108,7 +124,9 @@
         for (const key of ["target", "mode", "offset", "follow_master", "schedule"]) parts.push(st(r.ents[key]));
         const target = states[r.ents.target];
         for (const id of (target && target.attributes.thermostats) || []) parts.push(st(id));
+        parts.push(target && target.attributes.boost);
       }
+      parts.push(this._boostForm, [...this._busy]);
       return JSON.stringify(parts);
     }
 
@@ -203,6 +221,7 @@
         offsetMax: offset && offset.attributes.max,
         following: follow ? follow.state === "on" : null,
         activeBlock: attrs.active_block,
+        boost: attrs.boost || null,
         current,
         thermostats,
         heating: thermostats.some((t) => t.action === "heating"),
@@ -253,8 +272,63 @@
       } else if (action === "follow") {
         if (this._busy.has(entity)) return;
         this._call(entity, "switch", "toggle", { entity_id: entity });
+      } else if (action === "boost-open") {
+        const room = (this._rooms || []).find((r) => r.deviceId === el.dataset.key);
+        const view = room && this._roomView(room);
+        const base = view && view.target != null ? view.target : 20;
+        this._boostForm = { key: el.dataset.key, temperature: Math.round((base + 2) * 2) / 2, minutes: 60 };
+        this._render();
+      } else if (action === "boost-close") {
+        this._boostForm = null;
+        this._render();
+      } else if (action === "boost-inc" || action === "boost-dec") {
+        if (!this._boostForm) return;
+        const dir = action === "boost-inc" ? 0.5 : -0.5;
+        this._boostForm.temperature = Math.min(35, Math.max(5, this._boostForm.temperature + dir));
+        this._render();
+      } else if (action === "boost-start") {
+        if (!this._boostForm) return;
+        const room = (this._rooms || []).find((r) => r.deviceId === this._boostForm.key);
+        const f = this._boostForm;
+        this._boostForm = null;
+        if (!room || !room.ents.target) return;
+        this._call(room.ents.target, DOMAIN, "boost", { entity_id: room.ents.target, temperature: f.temperature, minutes: f.minutes });
+      } else if (action === "boost-cancel") {
+        e.preventDefault();
+        this._call(entity, DOMAIN, "cancel_boost", { entity_id: entity });
       }
     }
+
+    _onChange(e) {
+      const el = e.target;
+      if (el.dataset.role === "boost-minutes" && this._boostForm) this._boostForm.minutes = Number(el.value);
+    }
+
+    _boostFormHTML(key) {
+      const f = this._boostForm;
+      if (!f || f.key !== key) return "";
+      return `
+        <div class="boostform">
+          <span class="lbl2">Boost to</span>
+          <button class="round sm" data-action="boost-dec" data-key="${esc(key)}">−</button>
+          <span class="val">${esc(num(f.temperature))}°</span>
+          <button class="round sm" data-action="boost-inc" data-key="${esc(key)}">+</button>
+          <span class="lbl2">for</span>
+          <select data-role="boost-minutes" data-key="${esc(key)}">
+            ${[30, 60, 90, 120, 180, 240].map((m) => `<option value="${m}" ${f.minutes === m ? "selected" : ""}>${m < 60 ? m + " min" : m / 60 + " h" + (m % 60 ? " " + (m % 60) + " min" : "")}</option>`).join("")}
+          </select>
+          <button class="pill primary" data-action="boost-start" data-key="${esc(key)}">Start</button>
+          <button class="pill" data-action="boost-close">Cancel</button>
+        </div>`;
+    }
+
+    _boostStatusHTML(key, boost, entityId) {
+      if (!boost) return "";
+      const until = fmtUntil(boost.until, this._hass);
+      return `<div class="boosting"><ha-icon icon="mdi:rocket-launch"></ha-icon>Boosting to ${esc(num(Number(boost.temperature)))}° until ${esc(until)}
+        <a href="#" class="link" data-action="boost-cancel" data-key="${esc(key)}" data-entity="${esc(entityId)}">cancel</a></div>`;
+    }
+
 
     // --------------------------------------------------------- rendering
 
@@ -358,7 +432,14 @@
                   </button>`
                 : ""
             }
+            ${
+              this._config.show_boost !== false && r.following && !r.boost && !(this._boostForm && this._boostForm.key === r.deviceId) && r.modeKey !== "unavailable" && r.modeKey !== "disabled"
+                ? `<button class="boostbtn" data-action="boost-open" data-key="${esc(r.deviceId)}" title="Boost this room"><ha-icon icon="mdi:rocket-launch-outline"></ha-icon></button>`
+                : ""
+            }
           </div>
+          ${this._boostFormHTML(r.deviceId)}
+          ${this._boostStatusHTML(r.deviceId, r.boost, r.ents.target)}
           ${thermostats}
         </div>`;
     }
@@ -403,6 +484,24 @@
       transition: left .15s; }
     .toggle.on .knob { left: 21px; }
     .room.disabled .big, .room.disabled .sub, .master.disabled .big { opacity: 0.5; }
+
+    .boostform { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 8px 10px;
+      border-radius: 8px; background: var(--secondary-background-color, rgba(0,0,0,0.04)); }
+    .boostform .lbl2 { color: var(--secondary-text-color); font-size: 0.9em; }
+    .boostform select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, #ddd); border-radius: 8px; padding: 4px 8px; }
+    .boostform .val { min-width: 3em; text-align: center; font-weight: 500; }
+    .boosting { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--ch-follow); font-size: 0.95em; --mdc-icon-size: 18px; }
+    .boosting .link { color: var(--secondary-text-color); font-size: 0.9em; margin-left: 4px; }
+    .boostbtn { height: 30px; padding: 0 12px; border-radius: 15px; border: 1.5px solid var(--ch-follow); background: transparent;
+      color: var(--ch-follow); display: inline-flex; align-items: center; gap: 4px; --mdc-icon-size: 16px; font-size: 0.9em; }
+    .round.sm { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--ch-follow); background: transparent;
+      color: var(--ch-follow); font-size: 16px; line-height: 1; padding: 0; }
+    .pill { height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid var(--divider-color, #ddd);
+      background: transparent; color: var(--primary-text-color); }
+    .pill.primary { background: var(--ch-follow); border-color: var(--ch-follow); color: #fff; }
+    .boostform, .boosting { margin-left: 28px; }
+    .boostbtn { height: 28px; width: 28px; padding: 0; justify-content: center; border-radius: 50%; }
     .trvs { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-left: 28px; }
     .trv { display: flex; align-items: center; gap: 8px; color: var(--primary-text-color); text-decoration: none;
       font-size: 0.9em; padding: 3px 6px; margin-left: -6px; border-radius: 8px; --mdc-icon-size: 18px; }
