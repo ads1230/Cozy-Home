@@ -1,24 +1,24 @@
 name: Release
 
-# Publishing a GitHub release (Releases → "Draft a new release", tag vX.Y.Z)
-# attaches a zip of the integration to it. HACS reads releases to show
+# Releases are automatic: when a push to main changes the version in
+# manifest.json, this workflow creates the tag vX.Y.Z and the GitHub release
+# (with a zip of the integration attached). HACS reads releases to show
 # version numbers and offer updates; the zip is for manual installs.
 #
-# Creating a release with a new tag is both a "release" and a tag "push"
-# event, so the push job only acts when no release exists for the tag
-# (a bare tag pushed from a clone), and runs for one tag are serialised.
+# Pushing a tag or publishing a release by hand still works: the job then
+# checks the tag against manifest.json and attaches the zip.
 on:
+  push:
+    branches: [main]
+    tags: ["v*"]
   release:
     types: [published]
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || github.ref_name }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -26,42 +26,59 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.release.tag_name || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.ref_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
-      - name: Skip a tag push that already has a release (the release event handles it)
-        id: gate
+      - name: Work out the version and whether it needs a release
+        id: info
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && gh release view "$TAG" >/dev/null 2>&1; then
+          version="$(jq -r .version custom_components/cozy_home/manifest.json)"
+          case "${{ github.event_name }}" in
+            release) tag="${{ github.event.release.tag_name }}" ;;
+            push)
+              if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; else tag="v$version"; fi ;;
+          esac
+          if [ "${tag#v}" != "$version" ]; then
+            echo "Tag $tag does not match manifest version $version" >&2
+            exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            exists=true
+          else
+            exists=false
+          fi
+          # A push (branch or tag) with an existing release has nothing to do,
+          # unless it is the release event itself (attach the zip).
+          if [ "${{ github.event_name }}" = "push" ] && [ "$exists" = true ]; then
+            echo "Release $tag already exists; nothing to do"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Check the tag matches manifest.json
-        if: steps.gate.outputs.skip == 'false'
-        run: |
-          version="$(jq -r .version custom_components/cozy_home/manifest.json)"
-          if [ "${TAG#v}" != "$version" ]; then
-            echo "Tag $TAG does not match manifest version $version" >&2
-            exit 1
-          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
 
       - name: Build the integration zip
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.info.outputs.skip == 'false'
         run: |
           cd custom_components/cozy_home
           zip -r ../../cozy_home.zip . -x "__pycache__/*"
 
-      - name: Attach the zip (creating the release if a bare tag was pushed)
-        if: steps.gate.outputs.skip == 'false'
+      - name: Create the release (and tag) or attach the zip
+        if: steps.info.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.info.outputs.tag }}
+          VERSION: ${{ steps.info.outputs.version }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if [ "${{ steps.info.outputs.exists }}" = true ]; then
             gh release upload "$TAG" cozy_home.zip --clobber
           else
+            # --target creates the tag at this commit if it doesn't exist yet
             gh release create "$TAG" cozy_home.zip \
-              --title "Cozy Home ${TAG#v}" --generate-notes
+              --target "$GITHUB_SHA" \
+              --title "Cozy Home $VERSION" \
+              --generate-notes
           fi
