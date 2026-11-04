@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.8"; // kept in step with manifest.json
+  const VERSION = "0.8.9"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -601,7 +601,7 @@
         <button class="round" data-action="copy" title="Copy this day to other days" ${dis(!!blk)}><ha-icon icon="mdi:content-copy"></ha-icon></button>
         <button class="round" data-action="remove" title="Remove the selected block" ${dis(canRemove)}><ha-icon icon="mdi:minus"></ha-icon></button>
         <span class="spacer"></span>
-        <button class="pill" data-action="undo" ${dis(dirty)}>Undo All</button>
+        <button class="pill" data-action="undo" ${dis(dirty)}>Cancel</button>
         <button class="pill primary" data-action="save" ${dis(dirty)}>${this._busy ? "Saving…" : "Save"}</button>`;
     }
 
