@@ -3,6 +3,10 @@ name: Release
 # Publishing a GitHub release (Releases → "Draft a new release", tag vX.Y.Z)
 # attaches a zip of the integration to it. HACS reads releases to show
 # version numbers and offer updates; the zip is for manual installs.
+#
+# Creating a release with a new tag is both a "release" and a tag "push"
+# event, so the push job only acts when no release exists for the tag
+# (a bare tag pushed from a clone), and runs for one tag are serialised.
 on:
   release:
     types: [published]
@@ -12,6 +16,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -24,7 +32,17 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.ref_name }}
 
+      - name: Skip a tag push that already has a release (the release event handles it)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check the tag matches manifest.json
+        if: steps.gate.outputs.skip == 'false'
         run: |
           version="$(jq -r .version custom_components/cozy_home/manifest.json)"
           if [ "${TAG#v}" != "$version" ]; then
@@ -33,11 +51,13 @@ jobs:
           fi
 
       - name: Build the integration zip
+        if: steps.gate.outputs.skip == 'false'
         run: |
           cd custom_components/cozy_home
           zip -r ../../cozy_home.zip . -x "__pycache__/*"
 
       - name: Attach the zip (creating the release if a bare tag was pushed)
+        if: steps.gate.outputs.skip == 'false'
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" cozy_home.zip --clobber
