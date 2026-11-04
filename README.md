@@ -53,18 +53,20 @@ Each room becomes a device with its own controls:
 | Entity | What it does |
 |---|---|
 | `number.<room>_offset` | Live offset; change it any time |
-| `number.<room>_turn_off_below` | Live cut-off temperature |
-| `switch.<room>_follow_master` | Off = leave this room's thermostat completely alone |
-| `select.<room>_off_mode` | How "off" is done: **Thermostat off** (hvac `off`) or **Frost protection** (keep heating at the frost temperature) |
-| `number.<room>_frost_protection_temperature` | The frost-protection target (default 7.5°) |
-| `select.<room>_when_master_is_off` | **Turn off** the room too (default), or **Hold last target** — leave the TRV as it is until the master comes back |
+| `switch.<room>_follow_master` | Off = leave this room's thermostats completely alone |
+| `number.<room>_cut_off_temperature` | If the room's target (master + offset) would be below this, the room isn't heated normally — the *Off action* applies |
+| `select.<room>_off_action` | What "off" means for this room: **Switch off** (hvac `off`) or **Frost protection** (keep heating at the frost temperature). Used below the cut-off, when the master is off, and for `off` schedule blocks |
+| `number.<room>_frost_protection_temperature` | The target used by the *Frost protection* off action (default 7.5°) |
+| `select.<room>_when_master_is_off` | **Off action** (default), or **Hold last target** — leave the thermostats as they are until the master comes back |
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, the room's thermostats and what each was set to, active schedule block) |
 | `sensor.<room>_mode` | `follow`, `fixed`, `off`, `frost`, `hold`, `disabled`, `unavailable` |
 | `sensor.<room>_schedule` | The block in effect now; attribute `schedule` holds the whole week (read by the card) |
 
 The offset/cut-off entered when adding a room are the *initial* values; afterwards the
-entities are the source of truth and they survive restarts. The behaviour options (off mode,
-frost temperature, master-off) live in the room device's *Configuration* section.
+entities are the source of truth and they survive restarts. The cut-off, off action, frost
+temperature and master-off setting live together in the room device's *Configuration* section.
+(Installs that were created before 0.5.1 keep the old entity IDs such as
+`number.<room>_turn_off_below`; the names on the device page update.)
 
 ### Integration settings
 
@@ -108,13 +110,13 @@ room thermostat comes back online:
    * `follow` (or no schedule) → target = master target + offset (a block can carry its own offset)
    * master is **off** → room **off**, or **hold** (nothing sent) if *When master is off* = Hold;
      master unavailable → wait
-4. If target < *Turn off below* → room **off**.
+4. If target < *Cut-off temperature* → room **off**.
 5. Otherwise, for each thermostat in the room: round to its step, clamp to its min/max, switch
    it to **heat** if it was off, and set the temperature.
 
-**"Off" means one of two things**, per room (*Off mode*):
+**"Off" means one of two things**, per room (*Off action*):
 
-* **Thermostat off** — `climate.set_hvac_mode: off`. Most TRVs then rely on their own built-in
+* **Switch off** — `climate.set_hvac_mode: off`. Most TRVs then rely on their own built-in
   frost protection.
 * **Frost protection** — the TRV stays in `heat` and is set to the frost-protection temperature
   (7.5° by default), so the valve still opens if the room gets properly cold.

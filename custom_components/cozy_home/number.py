@@ -66,11 +66,12 @@ class RoomOffsetNumber(CozyHomeRoomEntity, NumberEntity):
 
 
 class RoomOffBelowNumber(CozyHomeRoomEntity, NumberEntity):
-    """If the room's computed target is below this, the thermostat is turned off."""
+    """The cut-off: targets below this aren't followed; the room's Off action applies."""
 
     _attr_translation_key = "off_below"
     _attr_icon = "mdi:thermometer-off"
     _attr_device_class = NumberDeviceClass.TEMPERATURE
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = OFF_BELOW_MIN
     _attr_native_max_value = OFF_BELOW_MAX

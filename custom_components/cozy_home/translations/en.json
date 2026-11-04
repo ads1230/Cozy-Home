@@ -35,12 +35,12 @@
           "name": "Room name",
           "climate_entities": "Thermostats in this room",
           "offset": "Offset",
-          "off_below": "Turn off below"
+          "off_below": "Cut-off temperature"
         },
         "data_description": {
           "climate_entities": "All of them get the room's offset, cut-off and schedule.",
           "offset": "Degrees added to the master target (-2 with a master of 20° gives 18°). Can be changed later with the room's entities.",
-          "off_below": "If the room's target would be below this temperature its thermostats are switched off (or set to frost protection)."
+          "off_below": "Cut-off: if the room's target (master + offset) would be lower than this, the room is not heated normally — its Off action applies instead (switch off, or frost protection)."
         }
       }
     },
@@ -76,7 +76,10 @@
             "name": "Room name",
             "climate_entities": "Thermostats in this room",
             "offset": "Offset",
-            "off_below": "Turn off below"
+            "off_below": "Cut-off temperature"
+          },
+          "data_description": {
+            "off_below": "Cut-off: if the room's target (master + offset) would be lower than this, the room is not heated normally — its Off action applies instead (switch off, or frost protection)."
           }
         },
         "room": {
@@ -86,12 +89,12 @@
             "name": "Room name",
             "climate_entities": "Thermostats in this room",
             "offset": "Offset",
-            "off_below": "Turn off below"
+            "off_below": "Cut-off temperature"
           },
           "data_description": {
             "climate_entities": "All of them get the room's offset, cut-off and schedule.",
             "offset": "Degrees added to the master target (-2 with a master of 20° gives 18°). Can be changed later with the room's entities.",
-            "off_below": "If the room's target would be below this temperature its thermostats are switched off (or set to frost protection)."
+            "off_below": "Cut-off: if the room's target (master + offset) would be lower than this, the room is not heated normally — its Off action applies instead (switch off, or frost protection)."
           }
         }
       },
@@ -112,7 +115,7 @@
         "name": "Offset"
       },
       "off_below": {
-        "name": "Turn off below"
+        "name": "Cut-off temperature"
       },
       "frost_temperature": {
         "name": "Frost protection temperature"
@@ -122,14 +125,14 @@
       "master_off": {
         "name": "When master is off",
         "state": {
-          "off": "Turn off",
+          "off": "Off action",
           "hold": "Hold last target"
         }
       },
       "off_mode": {
-        "name": "Off mode",
+        "name": "Off action",
         "state": {
-          "off": "Thermostat off",
+          "off": "Switch off",
           "frost": "Frost protection"
         }
       }

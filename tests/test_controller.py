@@ -59,7 +59,7 @@ async def test_initial_sync_applies_offset(
     assert target.attributes["master_target"] == 20.0
     assert hass.states.get("sensor.bedroom_mode").state == "follow"
     assert hass.states.get("number.bedroom_offset").state == "-2.0"
-    assert hass.states.get("number.bedroom_turn_off_below").state == "10.0"
+    assert hass.states.get("number.bedroom_cut_off_temperature").state == "10.0"
     assert hass.states.get("switch.bedroom_follow_master").state == "on"
     assert hass.states.get("switch.heating_enabled") is None  # global on/off is a setting now
 
@@ -156,7 +156,7 @@ async def test_offset_entity_changes_target(
     await hass.services.async_call(
         "number",
         "set_value",
-        {"entity_id": "number.bedroom_turn_off_below", "value": 25},
+        {"entity_id": "number.bedroom_cut_off_temperature", "value": 25},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -517,7 +517,7 @@ async def test_config_entities_exist_with_defaults(
     await setup_integration(hass, config_entry)
 
     assert hass.states.get("select.bedroom_when_master_is_off").state == "off"
-    assert hass.states.get("select.bedroom_off_mode").state == "off"
+    assert hass.states.get("select.bedroom_off_action").state == "off"
     assert hass.states.get("number.bedroom_frost_protection_temperature").state == "7.5"
 
 
@@ -575,7 +575,7 @@ async def test_frost_protection_instead_of_off(
     await hass.services.async_call(
         "select",
         "select_option",
-        {"entity_id": "select.bedroom_off_mode", "option": "frost"},
+        {"entity_id": "select.bedroom_off_action", "option": "frost"},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -632,7 +632,7 @@ async def test_frost_protection_switches_a_cold_trv_back_on(
     await hass.services.async_call(
         "select",
         "select_option",
-        {"entity_id": "select.bedroom_off_mode", "option": "frost"},
+        {"entity_id": "select.bedroom_off_action", "option": "frost"},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -653,7 +653,7 @@ async def test_schedule_off_block_uses_frost(
     await hass.services.async_call(
         "select",
         "select_option",
-        {"entity_id": "select.bedroom_off_mode", "option": "frost"},
+        {"entity_id": "select.bedroom_off_action", "option": "frost"},
         blocking=True,
     )
     await hass.services.async_call(
