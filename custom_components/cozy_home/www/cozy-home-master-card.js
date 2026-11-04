@@ -12,7 +12,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.9.2"; // kept in step with manifest.json
+  const VERSION = "0.9.3"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>

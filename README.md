@@ -261,20 +261,16 @@ precedence over following the master for that room.
 
 ## Logo
 
-**Why the integrations page shows a placeholder:** Home Assistant never reads brand images from
-an integration's own folder — it fetches them from
-[brands.home-assistant.io](https://brands.home-assistant.io), which is populated only from the
-[home-assistant/brands](https://github.com/home-assistant/brands) repository. So the logo
-appears in HA only once it has been merged there. To do that:
+The icon and logo ship inside the integration (`custom_components/cozy_home/brand/`), which
+Home Assistant **2026.3 and newer** serves itself — so the integrations page, device pages and
+the integration dialog show the Cozy Home mark with no further setup. Older Home Assistant
+versions ignore that folder and show a placeholder (they only know the central
+[brands](https://github.com/home-assistant/brands) repository, which no longer accepts custom
+integrations). The HACS store list is catching up with the same mechanism; it may show a
+placeholder there for a while even when Home Assistant itself shows the icon.
 
-1. Fork `home-assistant/brands`.
-2. Add a folder `custom_integrations/cozy_home/` containing the four files from `brand/`:
-   `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png` (they already match the size rules:
-   256²/512² icons, 128/256-px-high logos, PNG, transparent, trimmed).
-3. Open a pull request. Once it's merged, HA picks the images up without any change here
-   (clear the browser cache if it still shows the placeholder).
-
-`brand/` also has the SVG sources and `dark_` variants for dark backgrounds.
+`brand/` at the repo root has the SVG sources and the PNGs at both sizes, including `dark_`
+variants for dark backgrounds.
 
 ## Development
 
