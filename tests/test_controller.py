@@ -524,8 +524,52 @@ async def test_config_entities_exist_with_defaults(
     await setup_integration(hass, config_entry)
 
     assert hass.states.get("select.bedroom_when_master_is_off").state == "off"
-    assert hass.states.get("select.bedroom_off_action").state == "off"
+    assert hass.states.get("select.bedroom_off_action").state == "off"  # pinned by the fixture
     assert hass.states.get("number.bedroom_frost_protection_temperature").state == "7.5"
+
+
+async def test_new_rooms_default_to_frost_protection(hass: HomeAssistant, climate_calls) -> None:
+    """A room added without choosing an off action holds frost protection, not off."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry as _Entry
+
+    from custom_components.cozy_home.const import (
+        CONF_CLIMATE_ENTITIES,
+        CONF_MASTER_ENTITY,
+        CONF_NAME,
+        CONF_OFF_BELOW,
+        CONF_OFFSET,
+        CONF_ROOM_NAME,
+        SUBENTRY_TYPE_ROOM,
+    )
+
+    entry = _Entry(
+        domain=DOMAIN,
+        title="Heating",
+        unique_id=MASTER,
+        data={CONF_MASTER_ENTITY: MASTER, CONF_NAME: "Heating"},
+        subentries_data=[
+            {
+                "data": {
+                    CONF_ROOM_NAME: "Study",
+                    CONF_CLIMATE_ENTITIES: [OFFICE],
+                    CONF_OFFSET: -2.0,
+                    CONF_OFF_BELOW: 10.0,
+                },
+                "subentry_type": SUBENTRY_TYPE_ROOM,
+                "title": "Study",
+                "unique_id": None,
+                "subentry_id": "study_sub",
+            }
+        ],
+    )
+    entry.add_to_hass(hass)
+    set_master(hass, temperature=7)  # frost on the master -> 5° target, below the 10° cut-off
+    set_trv(hass, OFFICE, temperature=18)
+    await setup_integration(hass, entry)
+    assert hass.states.get("select.study_off_action").state == "frost"
+    assert _modes(climate_calls, OFFICE) == []  # not switched off...
+    assert _temps(climate_calls, OFFICE) == [7.5]  # ...held at frost protection
+    assert hass.states.get("sensor.study_mode").state == "frost"
 
 
 async def test_master_off_hold_keeps_last_target(
@@ -821,6 +865,7 @@ async def test_room_with_two_radiators(hass: HomeAssistant, climate_calls) -> No
                     CONF_CLIMATE_ENTITIES: ["climate.up_left", "climate.up_right"],
                     CONF_OFFSET: 1.0,
                     CONF_OFF_BELOW: 10.0,
+                    "off_mode": "off",  # this test checks the plain switch-off path
                 },
                 "subentry_type": SUBENTRY_TYPE_ROOM,
                 "title": "Landing",

@@ -16,6 +16,7 @@ from custom_components.cozy_home.const import (
     CONF_MASTER_ENTITY,
     CONF_NAME,
     CONF_OFF_BELOW,
+    CONF_OFF_MODE,
     CONF_OFFSET,
     CONF_ROOM_NAME,
     DOMAIN,
@@ -94,6 +95,7 @@ def config_entry(hass: HomeAssistant) -> MockConfigEntry:
                     CONF_CLIMATE_ENTITIES: [BEDROOM],
                     CONF_OFFSET: -2.0,
                     CONF_OFF_BELOW: 10.0,
+                    CONF_OFF_MODE: "off",  # tests below exercise the plain switch-off path
                 },
                 "subentry_type": SUBENTRY_TYPE_ROOM,
                 "title": "Bedroom",

@@ -42,7 +42,9 @@ DEFAULT_NAME: Final = "Cozy Home"
 DEFAULT_OFFSET: Final = 0.0
 DEFAULT_OFF_BELOW: Final = 10.0
 DEFAULT_MASTER_OFF: Final = MASTER_OFF_TURN_OFF
-DEFAULT_OFF_MODE: Final = OFF_MODE_OFF
+DEFAULT_OFF_MODE: Final = (
+    OFF_MODE_FROST  # new rooms hold frost protection rather than switching off
+)
 DEFAULT_FROST_TEMPERATURE: Final = 7.5
 
 FROST_MIN: Final = 5.0

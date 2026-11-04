@@ -55,7 +55,7 @@ Each room becomes a device with its own controls:
 | `number.<room>_offset` | Live offset; change it any time |
 | `switch.<room>_follow_master` | Off = leave this room's thermostats completely alone |
 | `number.<room>_cut_off_temperature` | If the room's target (master + offset) would be below this, the room isn't heated normally — the *Off action* applies |
-| `select.<room>_off_action` | What "off" means for this room: **Switch off** (hvac `off`) or **Frost protection** (keep heating at the frost temperature). Used below the cut-off, when the master is off, and for `off` schedule blocks |
+| `select.<room>_off_action` | What "off" means for this room: **Frost protection** (default — keep heating at the frost temperature) or **Switch off** (hvac `off`). Used below the cut-off, when the master is off, and for `off` schedule blocks |
 | `number.<room>_frost_protection_temperature` | The target used by the *Frost protection* off action (default 7.5°) |
 | `select.<room>_when_master_is_off` | **Off action** (default), or **Hold last target** — leave the thermostats as they are until the master comes back |
 | `sensor.<room>_target_temperature` | What the integration wants the room at (attributes show mode, reason, master target, the room's thermostats and what each was set to, active schedule block) |
@@ -129,10 +129,10 @@ room thermostat comes back online:
 
 **"Off" means one of two things**, per room (*Off action*):
 
+* **Frost protection** (default) — the TRV stays in `heat` and is set to the frost-protection
+  temperature (7.5° by default), so the valve still opens if the room gets properly cold.
 * **Switch off** — `climate.set_hvac_mode: off`. Most TRVs then rely on their own built-in
   frost protection.
-* **Frost protection** — the TRV stays in `heat` and is set to the frost-protection temperature
-  (7.5° by default), so the valve still opens if the room gets properly cold.
 
 Either way the room comes back on by itself: as soon as its target rises above the cut-off (or
 the master turns back on / the schedule block ends) the thermostat is switched back to `heat`
