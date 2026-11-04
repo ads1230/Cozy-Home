@@ -64,6 +64,10 @@
 
     setConfig(config) {
       this._config = { show_thermostats: true, show_master: true, ...(config || {}) };
+      if (this._hass) {
+        this._collect();
+        this._sig = this._signature();
+      }
       this._render();
     }
 
@@ -72,9 +76,39 @@
     }
 
     set hass(hass) {
+      // Called on every state change in Home Assistant; only re-render when
+      // something shown here changed, so taps aren't swallowed by re-renders.
+      const first = !this._hass;
       this._hass = hass;
       this._collect();
-      this._render();
+      const sig = this._signature();
+      if (first || sig !== this._sig) {
+        this._sig = sig;
+        this._render();
+      }
+    }
+
+    _signature() {
+      const states = this._hass.states;
+      const st = (id) => {
+        const s = id && states[id];
+        if (!s) return null;
+        const a = s.attributes;
+        return [s.state, a.reason, a.thermostats, a.applied, a.active_block, a.current_temperature,
+          a.temperature, a.hvac_action, a.friendly_name, a.enabled, a.master_entity];
+      };
+      const parts = [];
+      if (this._master) {
+        parts.push(this._master.name, st(this._master.ents.schedule),
+          st(this._master.sched.attributes.master_entity));
+      }
+      for (const r of this._rooms || []) {
+        parts.push(r.deviceId, r.name);
+        for (const key of ["target", "mode", "offset", "follow_master", "schedule"]) parts.push(st(r.ents[key]));
+        const target = states[r.ents.target];
+        for (const id of (target && target.attributes.thermostats) || []) parts.push(st(id));
+      }
+      return JSON.stringify(parts);
     }
 
     get hass() {

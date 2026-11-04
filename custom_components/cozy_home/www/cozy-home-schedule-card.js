@@ -117,6 +117,11 @@
     setConfig(config) {
       this._config = config || {};
       if (this._config.entity) this._selected = this._config.entity;
+      if (this._hass) {
+        this._refreshTargets();
+        if (!this._dirty()) this._loadFromHass();
+        this._sig = this._signature();
+      }
       this._render();
     }
 
@@ -125,10 +130,39 @@
     }
 
     set hass(hass) {
+      // Called on every state change in Home Assistant. Only touch the DOM
+      // when something this card shows actually changed, otherwise taps and
+      // typing get interrupted by needless re-renders.
+      const first = !this._hass;
       this._hass = hass;
       this._refreshTargets();
       if (!this._dirty()) this._loadFromHass();
-      this._render();
+      const sig = this._signature();
+      if (first || sig !== this._sig) {
+        this._sig = sig;
+        if (!this._drag) this._render();
+      } else {
+        this._renderNow();
+      }
+    }
+
+    _signature() {
+      const t = this._target();
+      const states = this._hass.states;
+      const pick = (id) => {
+        const st = id && states[id];
+        return st ? [st.state, st.attributes.reason] : null;
+      };
+      const sched = t && states[t.entity_id];
+      return JSON.stringify([
+        this._targets.map((x) => [x.entity_id, x.name, x.kind]),
+        this._selected,
+        sched && sched.attributes.schedule,
+        sched && sched.attributes.active_time,
+        t && pick(t.modeEntity),
+        t && pick(t.targetEntity),
+        this._hass.config && this._hass.config.time_zone,
+      ]);
     }
 
     get hass() {
