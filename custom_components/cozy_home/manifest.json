@@ -4,6 +4,9 @@
   "after_dependencies": [
     "frontend"
   ],
+  "categories": [
+    "climate.thermostats_heating"
+  ],
   "codeowners": [],
   "config_flow": true,
   "dependencies": [
