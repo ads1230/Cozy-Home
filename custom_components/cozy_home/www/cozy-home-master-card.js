@@ -11,7 +11,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.2"; // kept in step with manifest.json
+  const VERSION = "0.8.3"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>
@@ -170,13 +170,11 @@
       const preset = a.preset_mode && a.preset_mode !== "none" ? ` · ${esc(a.preset_mode)}` : "";
       const hub = this._hub.state;
       const schedText = bad(hub) ? "" : hub.state;
-      const scheduleLine = this._config.show_schedule
-        ? `<div class="sched"><ha-icon icon="mdi:calendar-clock"></ha-icon>${
-            schedText && !/^Not scheduled/.test(schedText)
-              ? `Schedule: ${esc(schedText)}`
-              : "Schedule: the thermostat's own"
-          }</div>`
-        : "";
+      const hasSchedule = schedText && !/^Not scheduled/.test(schedText);
+      const scheduleLine =
+        this._config.show_schedule && hasSchedule
+          ? `<div class="sched"><ha-icon icon="mdi:calendar-clock"></ha-icon>Schedule: ${esc(schedText)}</div>`
+          : "";
       const disabled = this._enabled ? "" : `<div class="warn"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>Cozy Home is disabled — rooms aren't being controlled</div>`;
       const controls = this._config.show_controls
         ? `<div class="controls">
