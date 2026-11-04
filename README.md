@@ -87,9 +87,10 @@ whole integration rather than a room:
 
 Edit a dashboard → **Add card** → *Cozy Home Thermostat*, or `type: custom:cozy-home-master-card`.
 The master (boiler) thermostat at a glance: the current temperature large, whether it is
-**heating**, idle or off, the target, and what the heating schedule is doing. −/+ nudge the
-target (the same as turning the thermostat up by hand: it holds until the next schedule block).
-Options: `title`, `show_schedule: false`, `show_controls: false`.
+**heating**, idle or off, the target, and what the heating schedule is doing (shown only when
+Home Assistant has a schedule). Options: `title`, `show_schedule: false`, and
+`show_controls: true` to add −/+ buttons that nudge the target (off by default — the schedule
+drives the target; a nudge holds until the next block, like turning the thermostat by hand).
 
 ## The rooms card
 

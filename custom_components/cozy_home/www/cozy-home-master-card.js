@@ -7,11 +7,11 @@
  * card of type `custom:cozy-home-master-card` (no options required).
  *   title: Heating          # optional heading; omit for the thermostat's name only
  *   show_schedule: true     # the schedule line
- *   show_controls: true     # −/+ target buttons
+ *   show_controls: false    # −/+ target buttons (off by default: the schedule drives the target)
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.3"; // kept in step with manifest.json
+  const VERSION = "0.8.4"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-master-card";
 
   const esc = (s) =>
@@ -33,7 +33,7 @@
     }
 
     setConfig(config) {
-      this._config = { show_schedule: true, show_controls: true, ...(config || {}) };
+      this._config = { show_schedule: true, show_controls: false, ...(config || {}) };
       if (this._hass) {
         this._collect();
         this._sig = this._signature();
@@ -166,11 +166,11 @@
         statusText = target != null ? `Idle · set to ${esc(num(Number(target)))}°` : "Idle";
         statusClass = "idle";
       }
-      const mode = c.state === "auto" ? "auto" : c.state === "heat" ? "manual" : c.state;
-      const preset = a.preset_mode && a.preset_mode !== "none" ? ` · ${esc(a.preset_mode)}` : "";
       const hub = this._hub.state;
       const schedText = bad(hub) ? "" : hub.state;
       const hasSchedule = schedText && !/^Not scheduled/.test(schedText);
+      const mode = off ? "off" : hasSchedule ? "scheduled" : c.state === "auto" ? "auto" : "manual";
+      const preset = a.preset_mode && a.preset_mode !== "none" ? ` · ${esc(a.preset_mode)}` : "";
       const scheduleLine =
         this._config.show_schedule && hasSchedule
           ? `<div class="sched"><ha-icon icon="mdi:calendar-clock"></ha-icon>Schedule: ${esc(schedText)}</div>`

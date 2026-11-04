@@ -14,7 +14,7 @@
  */
 (() => {
   const DOMAIN = "cozy_home";
-  const VERSION = "0.8.3"; // kept in step with manifest.json
+  const VERSION = "0.8.4"; // kept in step with manifest.json
   const CARD_TYPE = "cozy-home-schedule-card";
   const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const DAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
@@ -514,8 +514,7 @@
           t.kind === "master"
             ? `
           <div class="empty">
-            <p>${this._masterStateText(t)}</p>
-            <p>Create a schedule here and Home Assistant sets the thermostat's temperature at each block (switching it to manual mode first); the rooms follow with their offsets.</p>
+            <p>No heating schedule is set in Home Assistant.</p>
             <button class="pill primary" data-action="create-master">Create schedule</button>
           </div>`
             : `
@@ -550,22 +549,6 @@
       this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${header}${body}${msg}</ha-card>`;
       this._rendered = true;
       this._renderNow();
-    }
-
-    /** What is actually known about the master right now: its mode and target. */
-    _masterStateText(t) {
-      const sched = this._hass.states[t.entity_id];
-      const climate = sched && sched.attributes.master_entity && this._hass.states[sched.attributes.master_entity];
-      if (!climate || /^(unknown|unavailable)$/.test(climate.state)) {
-        return "No heating schedule is set in Home Assistant, and the thermostat is unavailable.";
-      }
-      const name = esc(climate.attributes.friendly_name || sched.attributes.master_entity);
-      const target = climate.attributes.temperature != null ? `${esc(num(Number(climate.attributes.temperature)))}°` : "";
-      if (climate.state === "off") return `No heating schedule is set in Home Assistant. <b>${name}</b> is off.`;
-      if (climate.state === "auto") {
-        return `No heating schedule is set in Home Assistant. <b>${name}</b> is in <b>auto</b> mode, so it is running a schedule of its own (set in its app — Home Assistant can't read it)${target ? `; its target right now is ${target}` : ""}.`;
-      }
-      return `No heating schedule is set in Home Assistant. <b>${name}</b> is in <b>manual</b> mode${target ? ` at ${target}` : ""}.`;
     }
 
     _statusHTML(t) {
